@@ -1,0 +1,191 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function hasRole(role) {
+      return isSignedIn()
+        && userDoc().data.role == role
+        && userDoc().data.status == 'active';
+    }
+
+    function isDeveloper() {
+      return hasRole('developer');
+    }
+
+    function isRegistrar() {
+      return hasRole('registrar');
+    }
+
+    function isMainRole() {
+      return hasRole('registrar')
+        || hasRole('dean')
+        || hasRole('organization_head')
+        || hasRole('teacher')
+        || hasRole('gsd')
+        || hasRole('student_life');
+    }
+
+    function isStaffRole(role) {
+      return role in ['dean', 'organization_head', 'teacher', 'gsd', 'student_life'];
+    }
+
+    function isPhinmaedEmail() {
+      return request.auth.token.email.matches('.*@phinmaed\\.com$');
+    }
+
+    function callerIsSelf(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function isProvisionalDeveloperSignup(userId) {
+      return isSignedIn()
+        && isPhinmaedEmail()
+        && callerIsSelf(userId)
+        && !exists(/databases/$(database)/documents/users/$(userId))
+        && request.resource.data.role == 'developer'
+        && request.resource.data.provisionalDeveloper == true
+        && request.resource.data.status == 'active'
+        && request.resource.data.email == request.auth.token.email;
+    }
+
+    // Users: Developers manage registrar profiles; users read own doc; Registrars read own.
+    match /users/{userId} {
+      allow read: if isSignedIn() && isPhinmaedEmail() && (
+        callerIsSelf(userId)
+        || isDeveloper()
+        || isMainRole()
+      );
+
+      allow create: if isProvisionalDeveloperSignup(userId)
+        || (
+          isDeveloper()
+          && isPhinmaedEmail()
+          && request.resource.data.role == 'registrar'
+          && request.resource.data.email.matches('.*@phinmaed\\.com$')
+          && request.resource.data.status in ['active', 'inactive']
+        )
+        || (
+          isRegistrar()
+          && isPhinmaedEmail()
+          && isStaffRole(request.resource.data.role)
+          && request.resource.data.email.matches('.*@phinmaed\\.com$')
+          && request.resource.data.status in ['active', 'inactive']
+        );
+
+      allow update: if isDeveloper()
+        && isPhinmaedEmail()
+        && resource.data.role == 'registrar'
+        && request.resource.data.role == 'registrar'
+        && request.resource.data.email.matches('.*@phinmaed\\.com$')
+        && request.resource.data.status in ['active', 'inactive'];
+
+      allow update: if isSignedIn()
+        && isPhinmaedEmail()
+        && isStaffRole(resource.data.role)
+        && resource.data.email == request.auth.token.email
+        && request.resource.data.email == resource.data.email;
+
+      allow delete: if isDeveloper() && isPhinmaedEmail() && resource.data.role == 'registrar';
+    }
+
+    match /registrar_management/{registrarId} {
+      allow read: if isDeveloper() && isPhinmaedEmail();
+      allow create, update, delete: if isDeveloper() && isPhinmaedEmail();
+    }
+
+    match /permissions/{permissionId} {
+      allow read: if isSignedIn() && isPhinmaedEmail() && (isDeveloper() || isRegistrar());
+      allow write: if isDeveloper() && isPhinmaedEmail();
+    }
+
+    function isPlotRecipientData(plotData) {
+      return isSignedIn()
+        && (
+          request.auth.uid in plotData.recipientUids
+          || plotData.recipientEmails.hasAny([request.auth.token.email])
+        );
+    }
+
+    function isActivePlotRecipient(plotData) {
+      return isPlotRecipientData(plotData)
+        && (
+          plotData.activeRecipientUid == request.auth.uid
+          || plotData.activeRecipientEmail == request.auth.token.email
+        );
+    }
+
+    match /schedule_plot_requests/{plotId} {
+      allow read: if isMainRole() && isPhinmaedEmail() && (
+        isRegistrar()
+        || isPlotRecipientData(resource.data)
+      );
+      allow create, delete: if isRegistrar() && isPhinmaedEmail();
+      allow update: if isRegistrar() && isPhinmaedEmail();
+
+      match /schedule_entries/{entryId} {
+        allow read: if isMainRole() && isPhinmaedEmail() && (
+          isRegistrar()
+          || isPlotRecipientData(get(/databases/$(database)/documents/schedule_plot_requests/$(plotId)).data)
+        );
+        allow create, update, delete: if isPhinmaedEmail() && (
+          isRegistrar()
+          || isActivePlotRecipient(get(/databases/$(database)/documents/schedule_plot_requests/$(plotId)).data)
+          || (
+            hasRole('dean')
+            && isPlotRecipientData(get(/databases/$(database)/documents/schedule_plot_requests/$(plotId)).data)
+            && get(/databases/$(database)/documents/schedule_plot_requests/$(plotId)).data.activeRecipientUid == null
+          )
+        );
+      }
+    }
+
+    match /academic_calendars/{schoolYearId} {
+      allow read: if isMainRole() && isPhinmaedEmail();
+      allow write: if isRegistrar() && isPhinmaedEmail();
+
+      match /holidays/{holidayId} {
+        allow read: if isMainRole() && isPhinmaedEmail();
+        allow write: if isRegistrar() && isPhinmaedEmail();
+      }
+
+      match /no_class_periods/{periodId} {
+        allow read: if isMainRole() && isPhinmaedEmail();
+        allow write: if isRegistrar() && isPhinmaedEmail();
+      }
+    }
+
+    match /buildings/{buildingId} {
+      allow read: if isMainRole() && isPhinmaedEmail();
+      allow write: if isRegistrar() && isPhinmaedEmail();
+
+      match /floors/{floorId} {
+        allow read: if isMainRole() && isPhinmaedEmail();
+        allow write: if isRegistrar() && isPhinmaedEmail();
+
+        match /rooms/{roomId} {
+          allow read: if isMainRole() && isPhinmaedEmail();
+          allow write: if isRegistrar() && isPhinmaedEmail();
+        }
+      }
+    }
+
+    // Registrar operational data (scheduling, etc.) — not writable by Developers.
+    match /{collection}/{document=**} {
+      allow read, write: if isRegistrar() && isPhinmaedEmail()
+        && collection != 'users'
+        && collection != 'registrar_management'
+        && collection != 'permissions'
+        && collection != 'buildings'
+        && collection != 'academic_calendars'
+        && collection != 'schedule_plot_requests';
+    }
+  }
+}

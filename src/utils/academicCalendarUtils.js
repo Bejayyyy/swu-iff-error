@@ -1,0 +1,219 @@
+/** Parse YYYY-MM-DD to local Date at midnight */
+export function parseDateOnly(value) {
+  if (!value) return null;
+  const [y, m, d] = value.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+
+export function formatDisplayDate(value) {
+  if (!value) return 'dd/mm/yyyy';
+  const dt = parseDateOnly(value);
+  if (!dt) return value;
+  return dt.toLocaleDateString('en-GB');
+}
+
+export function isDateInRange(dateStr, startStr, endStr) {
+  const d = parseDateOnly(dateStr);
+  const s = parseDateOnly(startStr);
+  const e = parseDateOnly(endStr);
+  if (!d || !s || !e) return false;
+  return d >= s && d <= e;
+}
+
+export function getSemesterForDate(dateStr, config) {
+  if (!config) return null;
+  if (config.semester1Start && config.semester1End && isDateInRange(dateStr, config.semester1Start, config.semester1End)) {
+    return 1;
+  }
+  if (config.semester2Start && config.semester2End && isDateInRange(dateStr, config.semester2Start, config.semester2End)) {
+    return 2;
+  }
+  return null;
+}
+
+export function findHolidayOnDate(dateStr, holidays = []) {
+  return holidays.find((h) => h.date === dateStr) || null;
+}
+
+export function findNoClassOnDate(dateStr, periods = []) {
+  return periods.find((p) => isDateInRange(dateStr, p.start, p.end)) || null;
+}
+
+export function getSchedulingBlockReason(dateStr, { config, holidays = [], noClassPeriods = [] }) {
+  const holiday = findHolidayOnDate(dateStr, holidays);
+  if (holiday) return `Holiday: ${holiday.name}`;
+
+  const noClass = findNoClassOnDate(dateStr, noClassPeriods);
+  if (noClass) return `No-class period: ${noClass.reason}`;
+
+  const semester = getSemesterForDate(dateStr, config);
+  if (!semester && (config?.semester1Start || config?.semester2Start)) {
+    return 'Date is outside configured semester ranges';
+  }
+
+  return null;
+}
+
+export function canScheduleOnDate(dateStr, calendarData, expectedSemester = null) {
+  const reason = getSchedulingBlockReason(dateStr, calendarData);
+  if (reason) return { allowed: false, reason };
+
+  if (expectedSemester) {
+    const semester = getSemesterForDate(dateStr, calendarData.config);
+    if (semester !== expectedSemester) {
+      return {
+        allowed: false,
+        reason: `Date is not within Semester ${expectedSemester}`,
+      };
+    }
+  }
+
+  return { allowed: true, reason: null };
+}
+
+export function formatExamRange(range) {
+  if (!range?.start || !range?.end) return '';
+  return `${formatDisplayDate(range.start)} to ${formatDisplayDate(range.end)}`;
+}
+
+export const EMPTY_EXAM_PERIODS = {
+  1: {
+    p1: { fr: { start: '', end: '' }, up: { start: '', end: '' } },
+    p2: { fr: { start: '', end: '' }, up: { start: '', end: '' } },
+    p3: { fr: { start: '', end: '' }, up: { start: '', end: '' } },
+    rbe: { fr: { start: '', end: '' }, up: { start: '', end: '' } },
+  },
+  2: {
+    p1: { fr: { start: '', end: '' }, up: { start: '', end: '' } },
+    p2: { fr: { start: '', end: '' }, up: { start: '', end: '' } },
+    p3: { fr: { start: '', end: '' }, up: { start: '', end: '' } },
+    rbe: { fr: { start: '', end: '' }, up: { start: '', end: '' } },
+  },
+};
+
+export function normalizeExamPeriods(raw) {
+  const base = EMPTY_EXAM_PERIODS;
+  if (!raw) return base;
+  const mergeLevel = (fallback, value) => ({
+    fr: { ...fallback.fr, ...(value?.fr || {}) },
+    up: { ...fallback.up, ...(value?.up || {}) },
+  });
+  const mergeSem = (semKey) => ({
+    p1: mergeLevel(base[semKey].p1, raw[semKey]?.p1 || raw[Number(semKey)]?.p1),
+    p2: mergeLevel(base[semKey].p2, raw[semKey]?.p2 || raw[Number(semKey)]?.p2),
+    p3: mergeLevel(base[semKey].p3, raw[semKey]?.p3 || raw[Number(semKey)]?.p3),
+    rbe: mergeLevel(base[semKey].rbe, raw[semKey]?.rbe || raw[Number(semKey)]?.rbe),
+  });
+  return { 1: mergeSem('1'), 2: mergeSem('2') };
+}
+
+export function formatDateOnly(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+export function getSemesterBounds(config, semester) {
+  if (!config) return { start: null, end: null };
+  const s = Number(semester);
+  if (s === 1) return { start: config.semester1Start || null, end: config.semester1End || null };
+  if (s === 2) return { start: config.semester2Start || null, end: config.semester2End || null };
+  return { start: null, end: null };
+}
+
+export function getMondayOfWeek(date) {
+  const d = new Date(date);
+  const dow = d.getDay();
+  const diff = dow === 0 ? -6 : 1 - dow;
+  d.setDate(d.getDate() + diff);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+export function enumerateDatesInRange(startStr, endStr) {
+  const start = parseDateOnly(startStr);
+  const end = parseDateOnly(endStr);
+  if (!start || !end) return [];
+  const dates = [];
+  const cur = new Date(start);
+  while (cur <= end) {
+    dates.push(formatDateOnly(cur));
+    cur.setDate(cur.getDate() + 1);
+  }
+  return dates;
+}
+
+export function getAllExamDates(examPeriods, semester) {
+  const sem = examPeriods?.[semester] || examPeriods?.[Number(semester)];
+  if (!sem) return new Set();
+  const dates = new Set();
+  ['p1', 'p2', 'p3', 'rbe'].forEach((key) => {
+    ['fr', 'up'].forEach((level) => {
+      const range = sem[key]?.[level];
+      if (range?.start && range?.end) {
+        enumerateDatesInRange(range.start, range.end).forEach((d) => dates.add(d));
+      }
+    });
+  });
+  return dates;
+}
+
+/** regular = class days; exam = exam-period days only */
+export function getPlotDayStatus(dateStr, calendarData, semester, scheduleMode = 'regular') {
+  const { config, holidays = [], noClassPeriods = [], examPeriods } = calendarData || {};
+  const bounds = getSemesterBounds(config, semester);
+
+  if (bounds.start && bounds.end && !isDateInRange(dateStr, bounds.start, bounds.end)) {
+    return { disabled: true, reason: 'Outside semester dates' };
+  }
+
+  const holiday = findHolidayOnDate(dateStr, holidays);
+  if (holiday) return { disabled: true, reason: `Holiday: ${holiday.name}` };
+
+  const noClass = findNoClassOnDate(dateStr, noClassPeriods);
+  if (noClass) return { disabled: true, reason: `No-class: ${noClass.reason}` };
+
+  const examDates = getAllExamDates(examPeriods, semester);
+  const isExamDate = examDates.has(dateStr);
+
+  if (scheduleMode === 'regular' && isExamDate) {
+    return { disabled: true, reason: 'Exam period date' };
+  }
+
+  if (scheduleMode === 'exam' && examDates.size > 0 && !isExamDate) {
+    return { disabled: true, reason: 'Not an exam period date' };
+  }
+
+  const sem = getSemesterForDate(dateStr, config);
+  if (sem && Number(semester) && sem !== Number(semester)) {
+    return { disabled: true, reason: `Not in Semester ${semester}` };
+  }
+
+  return { disabled: false, reason: null };
+}
+
+export function getWeekDates(weekStartDate) {
+  return Array.from({ length: 7 }, (_, i) => formatDateOnly(addDaysLocal(weekStartDate, i)));
+}
+
+function addDaysLocal(date, daysToAdd) {
+  const d = new Date(date);
+  d.setDate(d.getDate() + daysToAdd);
+  return d;
+}
+
+export function getInitialWeekStart(semesterStartStr) {
+  if (!semesterStartStr) return getMondayOfWeek(new Date());
+  const parsed = parseDateOnly(semesterStartStr);
+  return parsed ? getMondayOfWeek(parsed) : getMondayOfWeek(new Date());
+}
+
+export function countConfiguredExamPeriods(examPeriods, semester) {
+  const sem = examPeriods?.[semester] || examPeriods?.[Number(semester)];
+  if (!sem) return 0;
+  return ['p1', 'p2', 'p3', 'rbe'].filter((key) => {
+    const period = sem[key];
+    return period?.fr?.start || period?.up?.start;
+  }).length;
+}

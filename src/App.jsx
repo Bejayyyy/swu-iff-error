@@ -1,0 +1,88 @@
+import React from 'react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { AppProvider } from './context/AppContext';
+import { AuthProvider } from './context/AuthContext';
+import { DeveloperRoute, PasswordSetupRoute, PublicOnlyRoute, RegistrarRoute } from './components/auth/ProtectedRoute';
+
+import Login from './pages/Login';
+import DeveloperSignup from './pages/DeveloperSignup';
+import DeveloperDashboard from './pages/developer/DeveloperDashboard';
+import PasswordSetup from './pages/PasswordSetup';
+import Dashboard from './pages/Dashboard';
+import ApprovalManagement from './pages/ApprovalManagement';
+import BuildingManagement from './pages/BuildingManagement';
+import BuildingDetails from './pages/BuildingDetails';
+import RoomDetails from './pages/RoomDetails';
+import NonAcademicRequestDetails from './pages/NonAcademicRequestDetails';
+import AcademicRequestDetails from './pages/AcademicRequestDetails';
+import CourseScheduling from './pages/CourseScheduling';
+import RoomAvailability from './pages/RoomAvailability';
+import RoomFinder from './pages/RoomFinder';
+import ScheduleHistory from './pages/ScheduleHistory';
+import AcademicCalendar from './pages/AcademicCalendar';
+import Reports from './pages/Reports';
+import SystemAdministration from './pages/SystemAdministration';
+
+function RegistrarPage({ children }) {
+  return <RegistrarRoute>{children}</RegistrarRoute>;
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/" element={<Navigate to="/login" replace />} />
+            <Route
+              path="/login"
+              element={
+                <PublicOnlyRoute>
+                  <Login />
+                </PublicOnlyRoute>
+              }
+            />
+            <Route
+              path="/developer-signup"
+              element={
+                <PublicOnlyRoute>
+                  <DeveloperSignup />
+                </PublicOnlyRoute>
+              }
+            />
+            <Route
+              path="/set-password"
+              element={(
+                <PasswordSetupRoute>
+                  <PasswordSetup />
+                </PasswordSetupRoute>
+              )}
+            />
+            <Route
+              path="/developer"
+              element={
+                <DeveloperRoute>
+                  <DeveloperDashboard />
+                </DeveloperRoute>
+              }
+            />
+            <Route path="/dashboard" element={<RegistrarPage><Dashboard /></RegistrarPage>} />
+            <Route path="/approvals" element={<RegistrarPage><ApprovalManagement /></RegistrarPage>} />
+            <Route path="/course-scheduling" element={<RegistrarPage><CourseScheduling /></RegistrarPage>} />
+            <Route path="/room-availability" element={<RegistrarPage><RoomAvailability /></RegistrarPage>} />
+            <Route path="/room-finder" element={<RegistrarPage><RoomFinder /></RegistrarPage>} />
+            <Route path="/schedule-history" element={<RegistrarPage><ScheduleHistory /></RegistrarPage>} />
+            <Route path="/building-management" element={<RegistrarPage><BuildingManagement /></RegistrarPage>} />
+            <Route path="/academic-calendar" element={<RegistrarPage><AcademicCalendar /></RegistrarPage>} />
+            <Route path="/reports" element={<RegistrarPage><Reports /></RegistrarPage>} />
+            <Route path="/system-administration" element={<RegistrarPage><SystemAdministration /></RegistrarPage>} />
+            <Route path="/building/:id" element={<RegistrarPage><BuildingDetails /></RegistrarPage>} />
+            <Route path="/room/:id" element={<RegistrarPage><RoomDetails /></RegistrarPage>} />
+            <Route path="/request/:id" element={<RegistrarPage><NonAcademicRequestDetails /></RegistrarPage>} />
+            <Route path="/academic-request/:id" element={<RegistrarPage><AcademicRequestDetails /></RegistrarPage>} />
+          </Routes>
+        </BrowserRouter>
+      </AppProvider>
+    </AuthProvider>
+  );
+}

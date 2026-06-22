@@ -1,0 +1,160 @@
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  setDoc,
+  updateDoc,
+  deleteDoc,
+  query,
+  where,
+  serverTimestamp,
+  onSnapshot,
+} from 'firebase/firestore';
+import { sendPasswordResetEmail } from 'firebase/auth';
+import { auth, db } from '../firebase/firebase';
+import { COLLECTIONS, ROLES, USER_STATUS } from '../firebase/constants';
+import { getInitials, normalizeEmail, validateInstitutionalEmail } from '../firebase/authHelpers';
+import { createAuthUserWithEmail } from '../firebase/secondaryAuth';
+import { buildUserProfilePayload, upsertUserProfile } from './userService';
+
+const registrarsQuery = query(
+  collection(db, COLLECTIONS.USERS),
+  where('role', '==', ROLES.REGISTRAR),
+);
+
+export function subscribeRegistrars(onData, onError) {
+  return onSnapshot(
+    registrarsQuery,
+    (snapshot) => {
+      const list = snapshot.docs.map((d) => ({ uid: d.id, ...d.data() }));
+      onData(list);
+    },
+    onError,
+  );
+}
+
+export async function listRegistrars() {
+  const snapshot = await getDocs(registrarsQuery);
+  return snapshot.docs.map((d) => ({ uid: d.id, ...d.data() }));
+}
+
+async function writeRegistrarManagement(uid, payload, managedBy) {
+  await setDoc(
+    doc(db, COLLECTIONS.REGISTRAR_MANAGEMENT, uid),
+    {
+      uid,
+      ...payload,
+      managedBy,
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true },
+  );
+}
+
+export async function createRegistrarAccount(
+  { email, password, displayName, department, phone, permissions, notes },
+  createdByUid,
+) {
+  const validation = validateInstitutionalEmail(email);
+  if (!validation.valid) {
+    throw new Error(validation.message);
+  }
+
+  const normalized = normalizeEmail(email);
+  const authUser = await createAuthUserWithEmail(normalized, password);
+  const uid = authUser.uid;
+
+  const profile = buildUserProfilePayload({
+    email: normalized,
+    displayName,
+    role: ROLES.REGISTRAR,
+    status: USER_STATUS.ACTIVE,
+    permissions: permissions || [],
+    department,
+    phone,
+    createdBy: createdByUid,
+  });
+
+  await upsertUserProfile(uid, profile);
+
+  await writeRegistrarManagement(
+    uid,
+    {
+      email: normalized,
+      displayName: displayName.trim(),
+      department: (department || '').trim(),
+      status: USER_STATUS.ACTIVE,
+      permissions: permissions || [],
+      notes: (notes || '').trim(),
+      createdAt: serverTimestamp(),
+    },
+    createdByUid,
+  );
+
+  return uid;
+}
+
+export async function updateRegistrarAccount(
+  uid,
+  { displayName, department, phone, permissions, notes, status },
+  managedByUid,
+) {
+  const updates = { updatedAt: serverTimestamp() };
+  if (displayName !== undefined) updates.displayName = displayName.trim();
+  if (department !== undefined) updates.department = department.trim();
+  if (phone !== undefined) updates.phone = phone.trim();
+  if (permissions !== undefined) updates.permissions = permissions;
+  if (status !== undefined) updates.status = status;
+
+  if (displayName) {
+    const userSnap = await getDoc(doc(db, COLLECTIONS.USERS, uid));
+    const email = userSnap.data()?.email || '';
+    updates.initials = getInitials(displayName, email);
+  }
+
+  await updateDoc(doc(db, COLLECTIONS.USERS, uid), updates);
+
+  const mgmtPayload = { permissions: permissions || [] };
+  if (displayName !== undefined) mgmtPayload.displayName = displayName.trim();
+  if (department !== undefined) mgmtPayload.department = department.trim();
+  if (status !== undefined) mgmtPayload.status = status;
+  if (notes !== undefined) mgmtPayload.notes = notes.trim();
+
+  await writeRegistrarManagement(uid, mgmtPayload, managedByUid);
+}
+
+export async function setRegistrarStatus(uid, status, managedByUid) {
+  await updateRegistrarAccount(uid, { status }, managedByUid);
+}
+
+export async function deleteRegistrarAccount(uid) {
+  await deleteDoc(doc(db, COLLECTIONS.USERS, uid));
+  await deleteDoc(doc(db, COLLECTIONS.REGISTRAR_MANAGEMENT, uid));
+  // Firebase Auth user deletion requires Admin SDK (see functions/index.js).
+}
+
+export async function resetRegistrarPassword(email) {
+  const validation = validateInstitutionalEmail(email);
+  if (!validation.valid) {
+    throw new Error(validation.message);
+  }
+  await sendPasswordResetEmail(auth, normalizeEmail(email));
+}
+
+export async function seedPermissionCatalog(catalog) {
+  const batchWrites = catalog.map((item) =>
+    setDoc(
+      doc(db, COLLECTIONS.PERMISSIONS, item.id),
+      {
+        key: item.id,
+        label: item.label,
+        module: item.module,
+        description: item.label,
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true },
+    ),
+  );
+  await Promise.all(batchWrites);
+}

@@ -1,0 +1,171 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* { box-sizing: border-box; }
+
+body {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  color: #2B3235;
+  background: #f4f5f7;
+  margin: 0;
+  overflow-x: hidden;
+}
+
+:root {
+  --maroon: #7A0808;
+  --maroon-light: #FFF0F0;
+  --dark: #2B3235;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.18s;
+  color: #2B3235;
+  font-size: 13.5px;
+  font-weight: 500;
+  text-decoration: none;
+  width: 100%;
+}
+
+.nav-item:hover .nav-icon,
+.nav-item:hover .nav-label {
+  color: #800000 !important;
+}
+
+.nav-item:hover {
+  background: #F3F4F6;
+}
+
+.nav-item.active {
+  background: #F3F4F6;
+}
+
+.nav-item.active .nav-icon,
+.nav-item.active .nav-label {
+  color: #800000;
+}
+
+.nav-item.active {
+  font-weight: 600;
+}
+
+.scrollbar-thin::-webkit-scrollbar { width: 4px; }
+.scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+.scrollbar-thin::-webkit-scrollbar-thumb { background: #e0e0e0; border-radius: 4px; }
+
+.stat-card {
+  background: white;
+  border-radius: 10px;
+  border-left: 5px solid #800000;
+  padding: 24px 20px 24px 18px;
+  min-height: 150px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+.stat-icon-box {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  border: none;
+  background: #FFFBFB;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #800000;
+}
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-maroon {
+  background: #800000;
+  color: white;
+  border: none;
+  border-radius: 10px;
+  padding: 9px 20px;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: background 0.15s;
+  font-family: 'Plus Jakarta Sans', sans-serif;
+}
+
+.btn-maroon:hover { background: #600000; }
+
+.btn-outline-maroon {
+  background: white;
+  color: #800000;
+  border: 1.5px solid #800000;
+  border-radius: 10px;
+  padding: 8px 20px;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: 'Plus Jakarta Sans', sans-serif;
+}
+
+.btn-outline-maroon:hover { background: #800000; color: #fff; }
+
+.form-input {
+  width: 100%;
+  border: 1.5px solid #e2e5e8;
+  border-radius: 8px;
+  padding: 9px 12px;
+  font-size: 13.5px;
+  color: #2B3235;
+  outline: none;
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  transition: border-color 0.15s;
+  background: white;
+}
+
+.form-input:focus { border-color: #800000; }
+
+.form-label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #2B3235;
+  margin-bottom: 5px;
+  display: block;
+}
+
+.badge-pending { background: #FEF3C7; color: #92400E; font-size: 11px; font-weight: 700; padding: 2px 10px; border-radius: 20px; }
+.badge-approved { background: #D1FAE5; color: #065F46; font-size: 11px; font-weight: 700; padding: 2px 10px; border-radius: 20px; }
+.badge-rejected { background: #FEE2E2; color: #991B1B; font-size: 11px; font-weight: 700; padding: 2px 10px; border-radius: 20px; }
+.badge-available { background: #D1FAE5; color: #065F46; font-size: 11px; font-weight: 700; padding: 3px 12px; border-radius: 20px; }
+.badge-occupied { background: #FEE2E2; color: #991B1B; font-size: 11px; font-weight: 700; padding: 3px 12px; border-radius: 20px; }
+.badge-maintenance { background: #FEF3C7; color: #92400E; font-size: 11px; font-weight: 700; padding: 3px 12px; border-radius: 20px; }
+
+.priority-high { background: #FEE2E2; color: #991B1B; font-size: 11px; font-weight: 700; padding: 2px 10px; border-radius: 20px; }
+.priority-medium { background: #FEF3C7; color: #92400E; font-size: 11px; font-weight: 700; padding: 2px 10px; border-radius: 20px; }
+
+.request-card {
+  border: 1.5px solid #e8eaec;
+  border-radius: 12px;
+  background: white;
+  padding: 18px 20px;
+  margin-bottom: 14px;
+  transition: box-shadow 0.15s;
+}
+
+.request-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.08); }

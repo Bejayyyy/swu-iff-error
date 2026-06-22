@@ -1,0 +1,257 @@
+import {
+  collection,
+  collectionGroup,
+  doc,
+  getDoc,
+  onSnapshot,
+  serverTimestamp,
+  setDoc,
+  updateDoc,
+  writeBatch,
+  increment,
+} from 'firebase/firestore';
+import { db } from '../firebase/firebase';
+import { COLLECTIONS } from '../firebase/constants';
+
+function generateBuildingCode(name) {
+  const words = (name || '').trim().split(/\s+/).filter(Boolean);
+  if (words.length >= 2) {
+    return words.map((w) => w[0]).join('').toUpperCase().slice(0, 4);
+  }
+  return (name || 'BLD').slice(0, 3).toUpperCase();
+}
+
+function mapRoomDoc(roomDoc) {
+  const data = roomDoc.data();
+  const roomCode = data.roomCode || data.name || roomDoc.id;
+  return {
+    docId: roomDoc.id,
+    id: roomCode,
+    name: data.name || roomCode,
+    roomCode,
+    type: data.type || 'Classroom',
+    status: data.status || 'Available',
+    capacity: data.capacity ?? 0,
+    equipment: data.equipment || [],
+    floorId: data.floorId,
+    floorNumber: data.floorNumber,
+    buildingId: data.buildingId,
+  };
+}
+
+function mergeBuildingsSnapshot(buildingsMap, floorsByBuilding, roomsByFloorKey) {
+  return Object.values(buildingsMap)
+    .map((b) => {
+      const floors = (floorsByBuilding[b.id] || []).sort((a, z) => a.floorNumber - z.floorNumber);
+      const floorData = floors.map((f) => {
+        const key = `${b.id}_${f.id}`;
+        const rooms = (roomsByFloorKey[key] || [])
+          .map(mapRoomDoc)
+          .sort((a, z) => a.id.localeCompare(z.id));
+        return {
+          floor: f.floorNumber,
+          floorId: f.id,
+          label: f.label || `Floor ${f.floorNumber}`,
+          rooms,
+        };
+      });
+      const totalRooms = floorData.reduce((sum, f) => sum + f.rooms.length, 0);
+      return {
+        ...b,
+        floorData,
+        floors: floorData.length,
+        totalRooms,
+        manager: b.manager || null,
+      };
+    })
+    .sort((a, z) => (a.name || '').localeCompare(z.name || ''));
+}
+
+/** Real-time buildings with nested floors and rooms */
+export function subscribeToBuildings(onData, onError) {
+  const buildingsMap = {};
+  const floorsByBuilding = {};
+  const roomsByFloorKey = {};
+
+  const emit = () => {
+    onData(mergeBuildingsSnapshot(buildingsMap, floorsByBuilding, roomsByFloorKey));
+  };
+
+  const unsubBuildings = onSnapshot(
+    collection(db, COLLECTIONS.BUILDINGS),
+    (snap) => {
+      Object.keys(buildingsMap).forEach((k) => delete buildingsMap[k]);
+      snap.docs.forEach((d) => {
+        buildingsMap[d.id] = { id: d.id, ...d.data() };
+      });
+      emit();
+    },
+    onError,
+  );
+
+  const unsubFloors = onSnapshot(
+    collectionGroup(db, COLLECTIONS.FLOORS),
+    (snap) => {
+      Object.keys(floorsByBuilding).forEach((k) => delete floorsByBuilding[k]);
+      snap.docs.forEach((d) => {
+        const data = d.data();
+        const bid = data.buildingId;
+        if (!bid) return;
+        if (!floorsByBuilding[bid]) floorsByBuilding[bid] = [];
+        floorsByBuilding[bid].push({ id: d.id, ...data });
+      });
+      emit();
+    },
+    onError,
+  );
+
+  const unsubRooms = onSnapshot(
+    collectionGroup(db, COLLECTIONS.ROOMS),
+    (snap) => {
+      Object.keys(roomsByFloorKey).forEach((k) => delete roomsByFloorKey[k]);
+      snap.docs.forEach((d) => {
+        const data = d.data();
+        const key = `${data.buildingId}_${data.floorId}`;
+        if (!data.buildingId || !data.floorId) return;
+        if (!roomsByFloorKey[key]) roomsByFloorKey[key] = [];
+        roomsByFloorKey[key].push(d);
+      });
+      emit();
+    },
+    onError,
+  );
+
+  return () => {
+    unsubBuildings();
+    unsubFloors();
+    unsubRooms();
+  };
+}
+
+export async function createBuilding({ name, manager, floorNames, image, contact, email }) {
+  const trimmedName = name.trim();
+  if (!trimmedName) throw new Error('Building name is required.');
+
+  const buildingRef = doc(collection(db, COLLECTIONS.BUILDINGS));
+  const code = generateBuildingCode(trimmedName);
+  const batch = writeBatch(db);
+  const managerValue = manager?.trim() || null;
+
+  batch.set(buildingRef, {
+    name: trimmedName,
+    code,
+    image: image || '',
+    manager: managerValue,
+    contact: contact?.trim() || '',
+    email: email?.trim() || '',
+    totalRooms: 0,
+    floors: floorNames.length,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+
+  floorNames.forEach((label, index) => {
+    const floorRef = doc(collection(buildingRef, COLLECTIONS.FLOORS));
+    batch.set(floorRef, {
+      buildingId: buildingRef.id,
+      floorNumber: index + 1,
+      label: (label || `Floor ${index + 1}`).trim(),
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+  });
+
+  await batch.commit();
+  return buildingRef.id;
+}
+
+export async function addFloorToBuilding(buildingId, label) {
+  const buildingRef = doc(db, COLLECTIONS.BUILDINGS, buildingId);
+  const buildingSnap = await getDoc(buildingRef);
+  if (!buildingSnap.exists()) throw new Error('Building not found.');
+
+  const currentFloors = buildingSnap.data().floors || 0;
+  const floorNumber = currentFloors + 1;
+  const floorRef = doc(collection(buildingRef, COLLECTIONS.FLOORS));
+
+  await setDoc(floorRef, {
+    buildingId,
+    floorNumber,
+    label: (label || `Floor ${floorNumber}`).trim(),
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+
+  await updateDoc(buildingRef, {
+    floors: floorNumber,
+    updatedAt: serverTimestamp(),
+  });
+
+  return { floorId: floorRef.id, floorNumber };
+}
+
+export async function updateBuildingRecord(buildingId, patch) {
+  const updates = { updatedAt: serverTimestamp() };
+  if (patch.name !== undefined) updates.name = patch.name.trim();
+  if (patch.manager !== undefined) updates.manager = patch.manager?.trim() || null;
+  if (patch.contact !== undefined) updates.contact = patch.contact.trim();
+  if (patch.email !== undefined) updates.email = patch.email.trim();
+  if (patch.image !== undefined) updates.image = patch.image;
+
+  await updateDoc(doc(db, COLLECTIONS.BUILDINGS, buildingId), updates);
+}
+
+export async function addRoomToFloor(buildingId, floorId, floorNumber, room) {
+  const roomCode = (room.name || '').trim().toUpperCase();
+  if (!roomCode) throw new Error('Room name / number is required.');
+
+  const roomRef = doc(
+    collection(db, COLLECTIONS.BUILDINGS, buildingId, COLLECTIONS.FLOORS, floorId, COLLECTIONS.ROOMS),
+  );
+
+  await setDoc(roomRef, {
+    buildingId,
+    floorId,
+    floorNumber,
+    roomCode,
+    name: room.name.trim(),
+    type: room.type,
+    status: room.status || 'Available',
+    capacity: Number(room.capacity) || 0,
+    equipment: room.equipment || [],
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+
+  await updateDoc(doc(db, COLLECTIONS.BUILDINGS, buildingId), {
+    totalRooms: increment(1),
+    updatedAt: serverTimestamp(),
+  });
+
+  return { docId: roomRef.id, id: roomCode };
+}
+
+export async function updateRoomRecord(buildingId, floorId, roomDocId, patch) {
+  const roomRef = doc(
+    db,
+    COLLECTIONS.BUILDINGS,
+    buildingId,
+    COLLECTIONS.FLOORS,
+    floorId,
+    COLLECTIONS.ROOMS,
+    roomDocId,
+  );
+
+  const updates = { updatedAt: serverTimestamp() };
+  if (patch.name !== undefined) {
+    const name = patch.name.trim();
+    updates.name = name;
+    updates.roomCode = name.toUpperCase();
+  }
+  if (patch.type !== undefined) updates.type = patch.type;
+  if (patch.status !== undefined) updates.status = patch.status;
+  if (patch.capacity !== undefined) updates.capacity = Number(patch.capacity) || 0;
+  if (patch.equipment !== undefined) updates.equipment = patch.equipment;
+
+  await updateDoc(roomRef, updates);
+}

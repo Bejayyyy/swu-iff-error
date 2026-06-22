@@ -1,0 +1,211 @@
+import React, { useMemo, useState } from 'react';
+import { X } from 'lucide-react';
+import { useApp } from '../../context/AppContext';
+
+const academicTypes = [
+  { value: 'room-reservation', label: 'Room Reservation', fields: ['courseCode','courseDesc','instructor','semester','numStudents'] },
+  { value: 'lab-access', label: 'Lab Access', fields: ['courseCode','courseDesc','instructor','semester','numStudents','labRequirements'] },
+  { value: 'exam-room', label: 'Exam Room', fields: ['courseCode','courseDesc','instructor','semester','numStudents','examDate'] },
+  { value: 'make-up-class', label: 'Make-up Class', fields: ['courseCode','courseDesc','instructor','semester','numStudents','reason'] },
+  { value: 'special-class', label: 'Special Class', fields: ['courseCode','courseDesc','instructor','semester','numStudents','objectives'] },
+];
+
+export default function AcademicRequestModal({ onClose }) {
+  const { addRequest, buildingList } = useApp();
+  const [form, setForm] = useState({
+    reqType: '', courseCode: '', courseDesc: '', instructor: '', semester: '',
+    numStudents: '', building: '', floor: '', room: '', dateField: '', timeStart: '', timeEnd: '',
+    specificVenue: '', dateFiled: new Date().toLocaleDateString('en-GB'), labRequirements: '',
+    examDate: '', reason: '', objectives: '',
+  });
+
+  const selectedType = academicTypes.find(t => t.value === form.reqType);
+  const selectedBuilding = useMemo(
+    () => buildingList.find((b) => b.name === form.building),
+    [buildingList, form.building]
+  );
+  const roomsInSelectedBuilding = useMemo(() => {
+    if (!selectedBuilding) return [];
+    return selectedBuilding.floorData.flatMap((f) =>
+      f.rooms.map((r) => ({ id: r.id, floor: f.floor }))
+    );
+  }, [selectedBuilding]);
+
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const handleSubmit = (draft = false) => {
+    addRequest({
+      type: 'academic',
+      title: `${selectedType?.label || 'Academic Request'}: ${form.courseDesc}`,
+      ...form, status: draft ? 'Draft' : 'Pending',
+    });
+    onClose();
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="bg-white rounded-2xl w-full max-w-xl relative flex flex-col" style={{ maxHeight: '92vh' }} onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="px-8 pt-7 pb-4 border-b border-gray-100 flex-shrink-0">
+          <button onClick={onClose} className="absolute right-5 top-5 text-gray-400 hover:text-gray-700"><X size={20} /></button>
+          <div className="text-center mb-2">
+            <p className="text-sm font-black tracking-widest" style={{ color: '#7A0808' }}>SOUTHWESTERN UNIVERSITY</p>
+            <p className="text-xs font-bold tracking-widest" style={{ color: '#7A0808' }}>PHINMA</p>
+            <p className="font-bold text-sm mt-1 text-dark">ON-CAMPUS ACTIVITY PERMIT</p>
+          </div>
+
+          {/* Request Type Tabs */}
+          <div className="flex gap-2 mt-4">
+            <div className="flex-1 text-center py-2 rounded-lg font-bold text-sm cursor-default" style={{ background: '#7A0808', color: 'white' }}>Academic</div>
+          </div>
+        </div>
+
+        {/* Body - scrollable */}
+        <div className="flex-1 overflow-y-auto px-8 py-5">
+          {/* Type of Request */}
+          <div className="mb-5">
+            <h3 className="font-bold text-base mb-3 text-dark">Request Type</h3>
+            <div>
+              <label className="form-label">Type of Request <span className="text-red-500">*</span></label>
+              <select className="form-input" value={form.reqType} onChange={e => set('reqType', e.target.value)}>
+                <option value="">Select type of academic request</option>
+                {academicTypes.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+              </select>
+            </div>
+          </div>
+
+          {/* General Information */}
+          {form.reqType && (
+            <>
+              <div className="mb-5">
+                <h3 className="font-bold text-base mb-3 text-dark">General Information</h3>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="form-label">Course Code</label>
+                    <input className="form-input" placeholder="e.g., BIO-101" value={form.courseCode} onChange={e => set('courseCode', e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="form-label">Course Description</label>
+                    <input className="form-input" placeholder="Course name" value={form.courseDesc} onChange={e => set('courseDesc', e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="form-label">Instructor Name</label>
+                    <input className="form-input" placeholder="Full name" value={form.instructor} onChange={e => set('instructor', e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="form-label">Semester</label>
+                    <select className="form-input" value={form.semester} onChange={e => set('semester', e.target.value)}>
+                      <option value="">Select semester</option>
+                      <option>1st Semester</option>
+                      <option>2nd Semester</option>
+                      <option>Summer</option>
+                      <option>Midyear</option>
+                    </select>
+                  </div>
+                  <div className="col-span-2">
+                    <label className="form-label">Number of Students</label>
+                    <input className="form-input" type="number" placeholder="e.g., 30" value={form.numStudents} onChange={e => set('numStudents', e.target.value)} />
+                  </div>
+
+                  {/* Conditional fields */}
+                  {selectedType?.fields.includes('labRequirements') && (
+                    <div className="col-span-2">
+                      <label className="form-label">Lab Requirements / Equipment Needed</label>
+                      <textarea className="form-input resize-none" rows={2} value={form.labRequirements} onChange={e => set('labRequirements', e.target.value)} />
+                    </div>
+                  )}
+                  {selectedType?.fields.includes('examDate') && (
+                    <div className="col-span-2">
+                      <label className="form-label">Exam Date</label>
+                      <input className="form-input" type="date" value={form.examDate} onChange={e => set('examDate', e.target.value)} />
+                    </div>
+                  )}
+                  {selectedType?.fields.includes('reason') && (
+                    <div className="col-span-2">
+                      <label className="form-label">Reason for Make-up Class</label>
+                      <textarea className="form-input resize-none" rows={2} value={form.reason} onChange={e => set('reason', e.target.value)} />
+                    </div>
+                  )}
+                  {selectedType?.fields.includes('objectives') && (
+                    <div className="col-span-2">
+                      <label className="form-label">Objectives</label>
+                      <textarea className="form-input resize-none" rows={2} value={form.objectives} onChange={e => set('objectives', e.target.value)} />
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Venue & Schedule */}
+              <div className="mb-5">
+                <h3 className="font-bold text-base mb-3 text-dark">Venue & Schedule</h3>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="form-label">Building</label>
+                    <select
+                      className="form-input"
+                      value={form.building}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setForm((f) => ({ ...f, building: value, floor: '', room: '' }));
+                      }}
+                    >
+                      <option value="">Select Building</option>
+                      {buildingList.map((b) => <option key={b.id} value={b.name}>{b.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="form-label">Floor & Room</label>
+                    <select
+                      className="form-input"
+                      value={form.room}
+                      onChange={(e) => {
+                        const selectedRoom = roomsInSelectedBuilding.find((r) => r.id === e.target.value);
+                        setForm((f) => ({
+                          ...f,
+                          room: e.target.value,
+                          floor: selectedRoom ? `Floor ${selectedRoom.floor}` : '',
+                        }));
+                      }}
+                      disabled={!form.building}
+                    >
+                      <option value="">{form.building ? 'Select Room' : 'Select building first'}</option>
+                      {roomsInSelectedBuilding.map((r) => (
+                        <option key={r.id} value={r.id}>{`${r.id} (Floor ${r.floor})`}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="form-label">Date of Activity</label>
+                    <input className="form-input" type="date" value={form.dateField} onChange={e => set('dateField', e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="form-label">Time of Activity</label>
+                    <div className="flex items-center gap-2">
+                      <input className="form-input" type="time" value={form.timeStart} onChange={e => set('timeStart', e.target.value)} />
+                      <span className="text-xs font-semibold text-gray-400">To</span>
+                      <input className="form-input" type="time" value={form.timeEnd} onChange={e => set('timeEnd', e.target.value)} />
+                    </div>
+                  </div>
+                  <div className="col-span-2">
+                    <label className="form-label">Specific Venue Details</label>
+                    <textarea className="form-input resize-none" rows={2} placeholder="Additional details" value={form.specificVenue} onChange={e => set('specificVenue', e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="form-label">Date of Filed</label>
+                    <input className="form-input" value={new Date().toLocaleDateString()} readOnly style={{ background: '#f9f9f9' }} />
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-8 py-4 border-t border-gray-100 flex gap-3 flex-shrink-0">
+          <button onClick={() => handleSubmit(true)} className="btn-outline-maroon flex-1">Save as Draft</button>
+          <button onClick={() => handleSubmit(false)} className="btn-maroon flex-1 justify-center">Submit Request</button>
+        </div>
+      </div>
+    </div>
+  );
+}
