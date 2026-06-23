@@ -9,22 +9,32 @@ const R = 10;
 /**
  * Primary category switcher — shrink-wrapped container, 10px radii (not pills).
  */
-export function CategoryFilterTabs({ value, onChange, academicCount, nonAcademicCount, labels = ['Academic', 'Non-Academic'] }) {
-  const counts = [academicCount, nonAcademicCount];
-  const keys = ['academic', 'non-academic'];
+export function CategoryFilterTabs({
+  value,
+  onChange,
+  academicCount,
+  nonAcademicCount,
+  labels = ['Academic', 'Non-Academic'],
+  hideAcademic = false,
+  hideNonAcademic = false,
+}) {
+  const items = [
+    { key: 'academic', label: labels[0], count: academicCount, hidden: hideAcademic },
+    { key: 'non-academic', label: labels[1], count: nonAcademicCount, hidden: hideNonAcademic },
+  ].filter((item) => !item.hidden);
 
   return (
     <div
       className="inline-flex w-fit flex-wrap items-center p-1 gap-0.5 shadow-sm max-w-full"
       style={{ background: CONTAINER_BG, borderRadius: R }}
     >
-      {keys.map((k, i) => {
-        const active = value === k;
+      {items.map(({ key, label, count }) => {
+        const active = value === key;
         return (
           <button
-            key={k}
+            key={key}
             type="button"
-            onClick={() => onChange(k)}
+            onClick={() => onChange(key)}
             className="px-4 py-2 text-sm font-bold flex items-center gap-2 transition-all"
             style={{
               borderRadius: R,
@@ -33,12 +43,12 @@ export function CategoryFilterTabs({ value, onChange, academicCount, nonAcademic
               boxShadow: active ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
             }}
           >
-            {labels[i]}
+            {label}
             <span
               className="min-w-[22px] h-[22px] px-1 flex items-center justify-center text-[11px] font-black text-white"
               style={{ background: BADGE, borderRadius: 6 }}
             >
-              {counts[i]}
+              {count}
             </span>
           </button>
         );

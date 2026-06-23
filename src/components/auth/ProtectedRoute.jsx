@@ -1,6 +1,7 @@
 import React from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { canAccessRoute } from '../../constants/rolePermissions';
 import { DEVELOPER_ROUTE_PREFIX, MAIN_APP_ROLES, REGISTRAR_HOME, ROLES } from '../../firebase/constants';
 
 function AuthLoading() {
@@ -47,6 +48,9 @@ export function RegistrarRoute({ children }) {
   }
   if (!MAIN_APP_ROLES.includes(profile.role) || profile.status !== 'active') {
     return <Navigate to="/login" replace />;
+  }
+  if (!canAccessRoute(profile.role, location.pathname)) {
+    return <Navigate to={REGISTRAR_HOME} replace />;
   }
   return children;
 }

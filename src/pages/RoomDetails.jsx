@@ -5,6 +5,7 @@ import { useNavigate, useLocation, useParams } from 'react-router-dom';
 import { ArrowLeft, Plus, Printer, MapPin, Clock, Users, Wrench, Edit2 } from 'lucide-react';
 import Layout from '../components/Layout';
 import { useApp } from '../context/AppContext';
+import { useRolePermissions } from '../hooks/useRolePermissions';
 import EditRoomModal from '../components/modals/EditRoomModal';
 import WeeklyScheduleGrid from '../components/scheduling/WeeklyScheduleGrid';
 
@@ -19,6 +20,7 @@ export default function RoomDetails() {
   const { id } = useParams();
   const { buildingList } = useApp();
 
+  const { canEditRoom, canSubmitCourseSchedule, isRegistrar } = useRolePermissions();
   const [scheduleTab, setScheduleTab] = useState('regular');
   const [semesterTab, setSemesterTab] = useState('1');
   const [weekStartDate, setWeekStartDate] = useState(() => getInitialWeekStart(null));
@@ -85,12 +87,14 @@ export default function RoomDetails() {
           Back
         </button>
         <div className="flex gap-2 flex-wrap">
-          {buildingId && floorId && displayRoom?.docId && (
+          {buildingId && floorId && displayRoom?.docId && canEditRoom({ ...displayRoom, buildingId }) && (
             <button type="button" className="btn-outline-maroon flex items-center gap-2" onClick={() => setShowEditRoom(true)}>
               <Edit2 size={14} /> Edit Room Details
             </button>
           )}
-          <button type="button" className="btn-maroon"><Plus size={16} /> Add Schedule</button>
+          {(isRegistrar || canSubmitCourseSchedule()) && (
+            <button type="button" className="btn-maroon"><Plus size={16} /> Add Schedule</button>
+          )}
           <button type="button" className="btn-outline-maroon flex items-center gap-2"><Printer size={14} /> Print Schedule</button>
         </div>
       </div>

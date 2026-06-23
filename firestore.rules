@@ -60,6 +60,7 @@ service cloud.firestore {
     match /users/{userId} {
       allow read: if isSignedIn() && isPhinmaedEmail() && (
         callerIsSelf(userId)
+        || resource.data.email == request.auth.token.email
         || isDeveloper()
         || isMainRole()
       );
@@ -92,6 +93,11 @@ service cloud.firestore {
         && isStaffRole(resource.data.role)
         && resource.data.email == request.auth.token.email
         && request.resource.data.email == resource.data.email;
+
+      allow update: if isSignedIn()
+        && isPhinmaedEmail()
+        && callerIsSelf(userId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastLoginAt', 'updatedAt']);
 
       allow delete: if isDeveloper() && isPhinmaedEmail() && resource.data.role == 'registrar';
     }

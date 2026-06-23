@@ -3,8 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Plus, Edit2, Trash2, Building2 } from 'lucide-react';
 import Layout from '../components/Layout';
 import { useApp } from '../context/AppContext';
-import { useAuth } from '../context/AuthContext';
-import { ROLES } from '../firebase/constants';
+import { useRolePermissions } from '../hooks/useRolePermissions';
 import AddBuildingModal from '../components/modals/AddBuildingModal';
 import AddFloorModal from '../components/modals/AddFloorModal';
 
@@ -13,8 +12,7 @@ const statusBadge = { Available: 'badge-available', Occupied: 'badge-occupied', 
 export default function BuildingManagement() {
   const navigate = useNavigate();
   const { buildingList, buildingsLoading, buildingsError } = useApp();
-  const { profile } = useAuth();
-  const isRegistrar = profile?.role === ROLES.REGISTRAR;
+  const { canManageBuildings, canManageRoomMaintenance, canManageAssignedRooms, roleLabel } = useRolePermissions();
   const [selectedBuilding, setSelectedBuilding] = useState(null);
   const [showAddBuilding, setShowAddBuilding] = useState(false);
   const [showAddFloor, setShowAddFloor] = useState(false);
@@ -33,14 +31,17 @@ export default function BuildingManagement() {
     building?.floorData?.flatMap((f) => f.rooms.map((r) => ({ ...r, floor: f.floor, floorLabel: f.label }))) || [];
 
   return (
-    <Layout title="Building & Room Management" subtitle="Track room usage and generate insights">
+    <Layout
+      title={canManageBuildings() ? 'Building & Room Management' : 'Buildings & Rooms'}
+      subtitle={canManageRoomMaintenance() ? `${roleLabel} — manage room maintenance and view schedules` : canManageAssignedRooms() ? `${roleLabel} — manage assigned classrooms` : 'View buildings and room information'}
+    >
       <div className="flex justify-end gap-2 mb-5 flex-wrap">
-        {isRegistrar && building && (
+        {canManageBuildings() && building && (
           <button type="button" className="btn-outline-maroon" onClick={() => setShowAddFloor(true)}>
             <Plus size={16} /> Add Floor
           </button>
         )}
-        {isRegistrar && <button type="button" className="btn-maroon" onClick={() => setShowAddBuilding(true)}>
+        {canManageBuildings() && <button type="button" className="btn-maroon" onClick={() => setShowAddBuilding(true)}>
           <Plus size={16} /> Add Building
         </button>}
       </div>
@@ -56,7 +57,7 @@ export default function BuildingManagement() {
       ) : buildingList.length === 0 ? (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-12 text-center">
           <p className="text-sm text-gray-500 mb-4">No buildings yet. Add your first building to get started.</p>
-          {isRegistrar && <button type="button" className="btn-maroon" onClick={() => setShowAddBuilding(true)}>
+          {canManageBuildings() && <button type="button" className="btn-maroon" onClick={() => setShowAddBuilding(true)}>
             <Plus size={16} /> Add Building
           </button>}
         </div>
@@ -199,8 +200,8 @@ export default function BuildingManagement() {
         </div>
       )}
 
-      {isRegistrar && showAddBuilding && <AddBuildingModal onClose={() => setShowAddBuilding(false)} />}
-      {isRegistrar && showAddFloor && building && (
+      {canManageBuildings() && showAddBuilding && <AddBuildingModal onClose={() => setShowAddBuilding(false)} />}
+      {canManageBuildings() && showAddFloor && building && (
         <AddFloorModal
           buildingId={building.id}
           buildingName={building.name}

@@ -3,8 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Plus, Edit2, Building2, DoorOpen, Users, CheckSquare } from 'lucide-react';
 import Layout from '../components/Layout';
 import { useApp } from '../context/AppContext';
-import { useAuth } from '../context/AuthContext';
-import { ROLES } from '../firebase/constants';
+import { useRolePermissions } from '../hooks/useRolePermissions';
 import AddRoomModal from '../components/modals/AddRoomModal';
 import AddFloorModal from '../components/modals/AddFloorModal';
 import EditBuildingModal from '../components/modals/EditBuildingModal';
@@ -17,8 +16,8 @@ export default function BuildingDetails() {
   const navigate = useNavigate();
   const { id } = useParams();
   const { buildingList, buildingsLoading, updateBuilding } = useApp();
-  const { profile } = useAuth();
-  const isRegistrar = profile?.role === ROLES.REGISTRAR;
+  const { canManageBuildings, canEditRoom } = useRolePermissions();
+  const isRegistrar = canManageBuildings();
   const building = buildingList.find((b) => String(b.id) === String(id));
 
   const [activeFloor, setActiveFloor] = useState(null);
@@ -207,7 +206,7 @@ export default function BuildingDetails() {
                         >
                           View
                         </button>
-                        {isRegistrar && <button
+                        {(isRegistrar || canEditRoom({ ...room, buildingId: building.id })) && <button
                           type="button"
                           onClick={() => setEditRoom(room)}
                           className="p-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-gray-500"

@@ -43,6 +43,7 @@ export function AuthProvider({ children }) {
   const [authError, setAuthError] = useState(null);
   const [requiresPasswordSetup, setRequiresPasswordSetup] = useState(false);
   const signupInProgressRef = useRef(false);
+  const loginInProgressRef = useRef(false);
 
   const clearSession = useCallback(async () => {
     await signOut(auth);
@@ -75,7 +76,11 @@ export function AuthProvider({ children }) {
       }
 
       if (updateLogin) {
-        await touchLastLogin(user.uid);
+        try {
+          await touchLastLogin(user.uid);
+        } catch {
+          // Non-fatal: lastLoginAt update requires Firestore rules; don't block sign-in.
+        }
       }
 
       setProfile(userProfile);
@@ -97,7 +102,7 @@ export function AuthProvider({ children }) {
           return;
         }
 
-        if (signupInProgressRef.current) return;
+        if (signupInProgressRef.current || loginInProgressRef.current) return;
 
         const domainCheck = validateInstitutionalEmail(user.email);
         if (!domainCheck.valid) {
@@ -124,15 +129,18 @@ export function AuthProvider({ children }) {
       const validation = validateInstitutionalEmail(email);
       if (!validation.valid) throw new Error(validation.message);
 
+      loginInProgressRef.current = true;
       try {
         const credential = await signInWithEmailAndPassword(auth, normalizeEmail(email), password);
         const userProfile = await loadProfileForUser(credential.user, { updateLogin: true });
         setFirebaseUser(credential.user);
         return { redirectTo: getRedirectForRole(userProfile.role) };
       } catch (err) {
-        const message = err.code ? mapAuthError(err.code) : err.message;
+        const message = mapAuthError(err);
         setAuthError(message);
         throw new Error(message);
+      } finally {
+        loginInProgressRef.current = false;
       }
     },
     [loadProfileForUser],
@@ -140,6 +148,7 @@ export function AuthProvider({ children }) {
 
   const loginWithGoogle = useCallback(async () => {
     setAuthError(null);
+    loginInProgressRef.current = true;
     try {
       const credential = await signInWithPopup(auth, googleProvider);
       const userProfile = await loadProfileForUser(credential.user, { updateLogin: true });
@@ -153,9 +162,11 @@ export function AuthProvider({ children }) {
       if (err.code === 'auth/popup-closed-by-user') {
         throw new Error('Google sign-in was cancelled.');
       }
-      const message = err.code ? mapAuthError(err.code) : err.message;
+      const message = mapAuthError(err);
       setAuthError(message);
       throw new Error(message);
+    } finally {
+      loginInProgressRef.current = false;
     }
   }, [loadProfileForUser]);
 
@@ -199,7 +210,7 @@ export function AuthProvider({ children }) {
         await touchLastLogin(userProfile.uid);
         return { redirectTo: DEVELOPER_ROUTE_PREFIX };
       } catch (err) {
-        const message = err.code ? mapAuthError(err.code) : err.message;
+        const message = mapAuthError(err);
         setAuthError(message);
         throw new Error(message);
       } finally {

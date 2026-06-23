@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Plus, ClipboardList, Clock, CheckCircle, XCircle, MoreVertical, MapPin, Users, Calendar } from 'lucide-react';
 import Layout from '../components/Layout';
 import { useApp } from '../context/AppContext';
+import { useRolePermissions } from '../hooks/useRolePermissions';
 import AcademicRequestModal from '../components/modals/AcademicRequestModal';
 import NonAcademicRequestModal from '../components/modals/NonAcademicRequestModal';
 import ProgressStatCards from '../components/ProgressStatCards';
@@ -11,20 +12,41 @@ import { CategoryFilterTabs, StatusFilterRow } from '../components/FilterControl
 export default function ApprovalManagement() {
   const navigate = useNavigate();
   const { requests } = useApp();
-  const [tab, setTab] = useState('academic');
+  const {
+    roleLabel,
+    canSubmitReservation,
+    canCreateRequestType,
+    filterRequests,
+    canEndorseActivity,
+    canManageRoomActivityApproval,
+    canManageStudentActivityApproval,
+    isRegistrar,
+  } = useRolePermissions();
+
+  const showAcademicTab = isRegistrar || canEndorseActivity() || canCreateRequestType('academic');
+  const showNonAcademicTab = isRegistrar || canSubmitReservation() || canManageRoomActivityApproval() || canManageStudentActivityApproval();
+
+  const [tab, setTab] = useState(showNonAcademicTab && !showAcademicTab ? 'non-academic' : 'academic');
   const [filter, setFilter] = useState('All');
   const [showAcademicForm, setShowAcademicForm] = useState(false);
   const [showNonAcademicForm, setShowNonAcademicForm] = useState(false);
   const [showNewReqMenu, setShowNewReqMenu] = useState(false);
 
-  const filtered = requests.filter(r => {
+  const roleRequests = filterRequests(requests);
+
+  const filtered = roleRequests.filter((r) => {
     const typeMatch = tab === 'academic' ? r.type === 'academic' : r.type === 'non-academic';
     const statusMatch = filter === 'All' || r.status === filter;
     return typeMatch && statusMatch;
   });
 
-  const academicReqs = requests.filter(r => r.type === 'academic');
-  const nonAcademicReqs = requests.filter(r => r.type === 'non-academic');
+  const academicReqs = roleRequests.filter((r) => r.type === 'academic');
+  const nonAcademicReqs = roleRequests.filter((r) => r.type === 'non-academic');
+
+  const canCreateAny = canCreateRequestType('academic') || canCreateRequestType('non-academic');
+  const subtitle = isRegistrar
+    ? 'Review and approve schedules and room utilization requests'
+    : `${roleLabel} — view and manage requests within your role`;
 
   const counts = {
     total: filtered.length,
@@ -41,8 +63,8 @@ export default function ApprovalManagement() {
   ];
 
   return (
-    <Layout title="Approval Management" subtitle="Review and approve schedules and room utilization request">
-      {/* Top action */}
+    <Layout title="Approval Management" subtitle={subtitle}>
+      {canCreateAny && (
       <div className="flex justify-end mb-5 relative">
         <button className="btn-maroon" onClick={() => setShowNewReqMenu(!showNewReqMenu)}>
           <Plus size={16} /> New Request
@@ -51,12 +73,17 @@ export default function ApprovalManagement() {
           <>
             <div className="fixed inset-0 z-40" onClick={() => setShowNewReqMenu(false)} />
             <div className="absolute right-0 top-10 bg-white rounded-xl shadow-xl border border-gray-100 z-50 overflow-hidden w-48">
-              <button className="w-full text-left px-5 py-3 text-sm font-semibold hover:bg-red-50 text-dark" onClick={() => { setShowAcademicForm(true); setShowNewReqMenu(false); }}>Academic Request</button>
-              <button className="w-full text-left px-5 py-3 text-sm font-semibold hover:bg-red-50 text-dark" onClick={() => { setShowNonAcademicForm(true); setShowNewReqMenu(false); }}>Non-Academic Request</button>
+              {canCreateRequestType('academic') && (
+                <button className="w-full text-left px-5 py-3 text-sm font-semibold hover:bg-red-50 text-dark" onClick={() => { setShowAcademicForm(true); setShowNewReqMenu(false); }}>Academic Request</button>
+              )}
+              {canCreateRequestType('non-academic') && (
+                <button className="w-full text-left px-5 py-3 text-sm font-semibold hover:bg-red-50 text-dark" onClick={() => { setShowNonAcademicForm(true); setShowNewReqMenu(false); }}>Room Reservation</button>
+              )}
             </div>
           </>
         )}
       </div>
+      )}
 
       <div className="mb-6">
         <ProgressStatCards items={stats} />
@@ -67,12 +94,16 @@ export default function ApprovalManagement() {
         <h2 className="font-bold text-base mb-4" style={{ color: '#2B3235' }}>Request History</h2>
 
         <div className="flex flex-col gap-3 mb-5 w-fit max-w-full">
-          <CategoryFilterTabs
-            value={tab}
-            onChange={(v) => { setTab(v); setFilter('All'); }}
-            academicCount={academicReqs.length}
-            nonAcademicCount={nonAcademicReqs.length}
-          />
+          {(showAcademicTab || showNonAcademicTab) && (
+            <CategoryFilterTabs
+              value={tab}
+              onChange={(v) => { setTab(v); setFilter('All'); }}
+              academicCount={showAcademicTab ? academicReqs.length : 0}
+              nonAcademicCount={showNonAcademicTab ? nonAcademicReqs.length : 0}
+              hideAcademic={!showAcademicTab}
+              hideNonAcademic={!showNonAcademicTab}
+            />
+          )}
           <StatusFilterRow value={filter} onChange={setFilter} />
         </div>
 

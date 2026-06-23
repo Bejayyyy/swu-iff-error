@@ -36,7 +36,10 @@ export function getInitials(displayName, email) {
   return source.slice(0, 2).toUpperCase();
 }
 
-export function mapAuthError(code) {
+export function mapAuthError(error) {
+  const code = typeof error === 'string' ? error : error?.code;
+  const message = typeof error === 'object' ? error?.message : '';
+
   const messages = {
     'auth/invalid-email': 'Invalid email address.',
     'auth/user-disabled': 'This account has been disabled.',
@@ -47,6 +50,16 @@ export function mapAuthError(code) {
     'auth/weak-password': 'Password must be at least 6 characters.',
     'auth/too-many-requests': 'Too many attempts. Try again later.',
     'auth/network-request-failed': 'Network error. Check your connection.',
+    'auth/invalid-api-key': 'Firebase is misconfigured. Check your VITE_FIREBASE_* values in .env.',
+    'auth/api-key-not-valid.-please-pass-a-valid-api-key.': 'Firebase API key is invalid. Check your .env file.',
+    'permission-denied': 'Access denied loading your profile. Deploy updated Firestore rules or contact an administrator.',
   };
-  return messages[code] || 'Authentication failed. Please try again.';
+
+  if (code && messages[code]) return messages[code];
+  if (message?.includes('not provisioned')) return message;
+  if (message?.includes('inactive')) return message;
+  if (message?.includes('do not have access')) return message;
+  if (message?.includes('Missing Firebase env')) return message;
+  if (message) return message;
+  return 'Authentication failed. Please try again.';
 }

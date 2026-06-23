@@ -3,8 +3,7 @@ import {
   Plus, Trash2, ChevronDown, ChevronRight, CalendarDays, CircleAlert, CalendarClock, Calendar,
 } from 'lucide-react';
 import Layout from '../components/Layout';
-import { useAuth } from '../context/AuthContext';
-import { ROLES } from '../firebase/constants';
+import { useRolePermissions } from '../hooks/useRolePermissions';
 import { useAcademicCalendar } from '../hooks/useAcademicCalendar';
 import {
   buildSchoolYearId,
@@ -23,8 +22,8 @@ import {
 } from '../utils/academicCalendarUtils';
 
 export default function AcademicCalendar() {
-  const { profile } = useAuth();
-  const isRegistrar = profile?.role === ROLES.REGISTRAR;
+  const { canManageCalendar } = useRolePermissions();
+  const isRegistrar = canManageCalendar();
 
   const {
     schoolYears,

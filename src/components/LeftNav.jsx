@@ -6,37 +6,25 @@ import {
   Settings, ChevronDown, ChevronRight, Plus, Layers, DoorOpen,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
-import { useAuth } from '../context/AuthContext';
-import { ROLES } from '../firebase/constants';
+import { useRolePermissions } from '../hooks/useRolePermissions';
 import { NAV_WIDTH_PX, TOP_NAV_HEIGHT_PX } from '../constants/layout';
 import systemLogo from '../assets/logo.png';
 
 const MAROON = '#800000';
 const TEXT = '#2B3235';
 
-const registrarNavItems = [
-  { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
-  { label: 'Request Management', icon: CheckSquare, path: '/approvals', badge: 0 },
-  { label: 'Course Scheduling', icon: Calendar, path: '/course-scheduling' },
-  { label: 'Room Availability', icon: BookOpen, path: '/room-availability' },
-  { label: 'Room Finder', icon: Search, path: '/room-finder' },
-  { label: 'Schedule History', icon: Clock, path: '/schedule-history' },
-  { label: 'Buildings', icon: Building2, path: '/building-management' },
-  { label: 'Academic Calendar', icon: GraduationCap, path: '/academic-calendar' },
-  { label: 'Reports & Analytics', icon: BarChart2, path: '/reports' },
-  { label: 'System Administration', icon: Settings, path: '/system-administration' },
-];
-
-const staffNavItems = [
-  { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
-  { label: 'Request Management', icon: CheckSquare, path: '/approvals', badge: 0 },
-  { label: 'Course Scheduling', icon: Calendar, path: '/course-scheduling' },
-  { label: 'Room Availability', icon: BookOpen, path: '/room-availability' },
-  { label: 'Room Finder', icon: Search, path: '/room-finder' },
-  { label: 'Schedule History', icon: Clock, path: '/schedule-history' },
-  { label: 'Academic Calendar', icon: GraduationCap, path: '/academic-calendar' },
-  { label: 'Buildings', icon: Building2, path: '/building-management' },
-];
+const NAV_ICONS = {
+  '/dashboard': LayoutDashboard,
+  '/approvals': CheckSquare,
+  '/course-scheduling': Calendar,
+  '/room-availability': BookOpen,
+  '/room-finder': Search,
+  '/schedule-history': Clock,
+  '/building-management': Building2,
+  '/academic-calendar': GraduationCap,
+  '/reports': BarChart2,
+  '/system-administration': Settings,
+};
 
 export default function LeftNav({
   onAddBuilding,
@@ -46,11 +34,15 @@ export default function LeftNav({
 }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { profile } = useAuth();
+  const { navItems, approvalsNavLabel, canManageBuildings } = useRolePermissions();
   const { buildingList, requests, expandedBuildings, expandedFloors, toggleBuilding, toggleFloor } = useApp();
   const pendingCount = requests.filter((r) => r.status === 'Pending').length;
-  const isRegistrar = profile?.role === ROLES.REGISTRAR;
-  const navItems = isRegistrar ? registrarNavItems : staffNavItems;
+
+  const resolvedNavItems = navItems.map((item) => ({
+    ...item,
+    icon: NAV_ICONS[item.path] || LayoutDashboard,
+    label: item.path === '/approvals' ? approvalsNavLabel : item.label,
+  }));
 
   const isActive = (path) => location.pathname === path || location.pathname.startsWith(`${path}/`);
 
@@ -85,7 +77,7 @@ export default function LeftNav({
       </div>
 
       <div className="flex-1 overflow-y-auto scrollbar-thin py-3 px-2">
-        {navItems.map(({ label, icon: Icon, path }) => {
+        {resolvedNavItems.map(({ label, icon: Icon, path }) => {
           const active = isActive(path);
           return (
             <button
@@ -120,7 +112,7 @@ export default function LeftNav({
         <div className="mt-4 mb-1 px-2">
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-bold tracking-widest uppercase" style={{ color: TEXT, opacity: 0.45 }}>Buildings</span>
-            {isRegistrar && (
+            {canManageBuildings() && (
               <button
                 type="button"
                 onClick={onAddBuilding}
