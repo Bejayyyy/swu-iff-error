@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, CheckSquare, Calendar, BookOpen,
   Search, Clock, Building2, GraduationCap, BarChart2,
-  Settings, ChevronDown, ChevronRight, Plus, Layers, DoorOpen,
+  Settings, ChevronDown, ChevronRight, Plus, Layers, DoorOpen, GitBranch,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useRolePermissions } from '../hooks/useRolePermissions';
@@ -24,6 +24,7 @@ const NAV_ICONS = {
   '/academic-calendar': GraduationCap,
   '/reports': BarChart2,
   '/system-administration': Settings,
+  '/approval-workflow': GitBranch,
 };
 
 export default function LeftNav({
@@ -34,9 +35,11 @@ export default function LeftNav({
 }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { navItems, approvalsNavLabel, canManageBuildings } = useRolePermissions();
+  const { navItems, approvalsNavLabel, canManageBuildings, filterRequests } = useRolePermissions();
   const { buildingList, requests, expandedBuildings, expandedFloors, toggleBuilding, toggleFloor } = useApp();
-  const pendingCount = requests.filter((r) => r.status === 'Pending').length;
+  const pendingCount = filterRequests(requests).filter(
+    (r) => r.status === 'Pending' || r.status === 'In Progress',
+  ).length;
 
   const resolvedNavItems = navItems.map((item) => ({
     ...item,

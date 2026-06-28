@@ -183,6 +183,28 @@ service cloud.firestore {
       }
     }
 
+    match /{path=**}/floors/{floorId} {
+      allow read: if isMainRole() && isPhinmaedEmail();
+      allow write: if isRegistrar() && isPhinmaedEmail();
+    }
+
+    match /{path=**}/rooms/{roomId} {
+      allow read: if isMainRole() && isPhinmaedEmail();
+      allow write: if isRegistrar() && isPhinmaedEmail();
+    }
+
+    match /approval_workflows/{workflowId} {
+      allow read: if isMainRole() && isPhinmaedEmail();
+      allow write: if isRegistrar() && isPhinmaedEmail();
+    }
+
+    match /room_reservations/{reservationId} {
+      allow read: if isMainRole() && isPhinmaedEmail();
+      allow create: if isMainRole() && isPhinmaedEmail()
+        && request.resource.data.createdByUid == request.auth.uid;
+      allow update: if isMainRole() && isPhinmaedEmail();
+    }
+
     // Registrar operational data (scheduling, etc.) — not writable by Developers.
     match /{collection}/{document=**} {
       allow read, write: if isRegistrar() && isPhinmaedEmail()
@@ -191,7 +213,9 @@ service cloud.firestore {
         && collection != 'permissions'
         && collection != 'buildings'
         && collection != 'academic_calendars'
-        && collection != 'schedule_plot_requests';
+        && collection != 'schedule_plot_requests'
+        && collection != 'approval_workflows'
+        && collection != 'room_reservations';
     }
   }
 }

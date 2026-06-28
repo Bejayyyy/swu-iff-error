@@ -4,10 +4,11 @@ import { Plus, ClipboardList, Clock, CheckCircle, XCircle, MoreVertical, MapPin,
 import Layout from '../components/Layout';
 import { useApp } from '../context/AppContext';
 import { useRolePermissions } from '../hooks/useRolePermissions';
-import AcademicRequestModal from '../components/modals/AcademicRequestModal';
-import NonAcademicRequestModal from '../components/modals/NonAcademicRequestModal';
+import { useRoomReservationFlow } from '../hooks/useRoomReservationFlow';
 import ProgressStatCards from '../components/ProgressStatCards';
 import { CategoryFilterTabs, StatusFilterRow } from '../components/FilterControls';
+import { buildApprovalFlowLabel } from '../constants/approvalWorkflow';
+import { RESERVATION_STATUS } from '../constants/approvalWorkflow';
 
 export default function ApprovalManagement() {
   const navigate = useNavigate();
@@ -28,15 +29,14 @@ export default function ApprovalManagement() {
 
   const [tab, setTab] = useState(showNonAcademicTab && !showAcademicTab ? 'non-academic' : 'academic');
   const [filter, setFilter] = useState('All');
-  const [showAcademicForm, setShowAcademicForm] = useState(false);
-  const [showNonAcademicForm, setShowNonAcademicForm] = useState(false);
-  const [showNewReqMenu, setShowNewReqMenu] = useState(false);
+  const { openReservation, modals } = useRoomReservationFlow();
 
   const roleRequests = filterRequests(requests);
 
   const filtered = roleRequests.filter((r) => {
     const typeMatch = tab === 'academic' ? r.type === 'academic' : r.type === 'non-academic';
-    const statusMatch = filter === 'All' || r.status === filter;
+    const normalizedStatus = r.status === RESERVATION_STATUS.IN_PROGRESS ? 'Pending' : r.status;
+    const statusMatch = filter === 'All' || r.status === filter || (filter === 'Pending' && normalizedStatus === 'Pending');
     return typeMatch && statusMatch;
   });
 
@@ -50,9 +50,9 @@ export default function ApprovalManagement() {
 
   const counts = {
     total: filtered.length,
-    pending: filtered.filter(r => r.status === 'Pending').length,
-    approved: filtered.filter(r => r.status === 'Approved').length,
-    rejected: filtered.filter(r => r.status === 'Rejected').length,
+    pending: filtered.filter((r) => r.status === 'Pending' || r.status === RESERVATION_STATUS.IN_PROGRESS).length,
+    approved: filtered.filter((r) => r.status === 'Approved').length,
+    rejected: filtered.filter((r) => r.status === 'Rejected').length,
   };
 
   const stats = [
@@ -66,22 +66,9 @@ export default function ApprovalManagement() {
     <Layout title="Approval Management" subtitle={subtitle}>
       {canCreateAny && (
       <div className="flex justify-end mb-5 relative">
-        <button className="btn-maroon" onClick={() => setShowNewReqMenu(!showNewReqMenu)}>
-          <Plus size={16} /> New Request
+        <button className="btn-maroon" onClick={() => openReservation()}>
+          <Plus size={16} /> New Reservation
         </button>
-        {showNewReqMenu && (
-          <>
-            <div className="fixed inset-0 z-40" onClick={() => setShowNewReqMenu(false)} />
-            <div className="absolute right-0 top-10 bg-white rounded-xl shadow-xl border border-gray-100 z-50 overflow-hidden w-48">
-              {canCreateRequestType('academic') && (
-                <button className="w-full text-left px-5 py-3 text-sm font-semibold hover:bg-red-50 text-dark" onClick={() => { setShowAcademicForm(true); setShowNewReqMenu(false); }}>Academic Request</button>
-              )}
-              {canCreateRequestType('non-academic') && (
-                <button className="w-full text-left px-5 py-3 text-sm font-semibold hover:bg-red-50 text-dark" onClick={() => { setShowNonAcademicForm(true); setShowNewReqMenu(false); }}>Room Reservation</button>
-              )}
-            </div>
-          </>
-        )}
       </div>
       )}
 
@@ -127,9 +114,7 @@ export default function ApprovalManagement() {
               <p className="text-xs font-medium mb-3" style={{ color: '#2B3235', opacity: 0.65 }}>{req.department}</p>
               <p className="text-xs font-semibold mb-3" style={{ color: '#2B3235', opacity: 0.75 }}>A &nbsp; {req.requestor}</p>
               <p className="text-[11px] font-bold mb-3" style={{ color: '#800000' }}>
-                {req.type === 'academic'
-                  ? `Approval flow: ${req.gsdApplicable !== false ? 'Dean → GSD → Registrar' : 'Dean → Registrar'}`
-                  : `Signature flow: ${(req.approvalSteps || []).map((s) => s.role).join(' → ')}`}
+                Approval flow: {buildApprovalFlowLabel(req.approvalRecords || req.approvalSteps || []) || 'Not configured'}
               </p>
 
               <div className="grid grid-cols-3 gap-3 mb-4">
@@ -177,8 +162,7 @@ export default function ApprovalManagement() {
         )}
       </div>
 
-      {showAcademicForm && <AcademicRequestModal onClose={() => setShowAcademicForm(false)} />}
-      {showNonAcademicForm && <NonAcademicRequestModal onClose={() => setShowNonAcademicForm(false)} />}
+      {modals}
     </Layout>
   );
 }

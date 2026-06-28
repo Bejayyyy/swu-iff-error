@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import {
   subscribeToBuildings,
   createBuilding,
@@ -7,6 +7,14 @@ import {
   updateBuildingRecord,
   updateRoomRecord,
 } from '../services/buildingService';
+import {
+  subscribeRoomReservations,
+  createRoomReservation,
+  updateRoomReservation,
+  processApprovalAction,
+  submitDraftReservation,
+} from '../services/reservationService';
+import { useAuth } from './AuthContext';
 
 const AppContext = createContext(null);
 
@@ -159,15 +167,20 @@ const sampleUsers = [
 ];
 
 export function AppProvider({ children }) {
+  const { firebaseUser, loading: authLoading } = useAuth();
   const [buildingList, setBuildingList] = useState([]);
   const [buildingsLoading, setBuildingsLoading] = useState(true);
   const [buildingsError, setBuildingsError] = useState(null);
-  const [requests, setRequests] = useState(sampleRequests);
+  const [requests, setRequests] = useState([]);
+  const [requestsLoading, setRequestsLoading] = useState(true);
+  const [requestsError, setRequestsError] = useState(null);
   const [users, setUsers] = useState(sampleUsers);
   const [expandedBuildings, setExpandedBuildings] = useState({});
   const [expandedFloors, setExpandedFloors] = useState({});
 
   useEffect(() => {
+    if (authLoading) return undefined;
+
     setBuildingsLoading(true);
     const unsub = subscribeToBuildings(
       (list) => {
@@ -181,7 +194,29 @@ export function AppProvider({ children }) {
       },
     );
     return unsub;
-  }, []);
+  }, [authLoading, firebaseUser]);
+
+  useEffect(() => {
+    if (authLoading || !firebaseUser) {
+      setRequests([]);
+      setRequestsLoading(!authLoading && !firebaseUser ? false : authLoading);
+      return undefined;
+    }
+
+    setRequestsLoading(true);
+    const unsub = subscribeRoomReservations(
+      (list) => {
+        setRequests(list);
+        setRequestsLoading(false);
+        setRequestsError(null);
+      },
+      (err) => {
+        setRequestsError(err.message || 'Failed to load reservations.');
+        setRequestsLoading(false);
+      },
+    );
+    return unsub;
+  }, [authLoading, firebaseUser]);
 
   const addBuilding = async (b) => {
     await createBuilding({
@@ -203,19 +238,36 @@ export function AppProvider({ children }) {
   const updateRoom = async (buildingId, floorId, roomDocId, patch) => {
     await updateRoomRecord(buildingId, floorId, roomDocId, patch);
   };
-  const addRequest = (r) => {
-    const gsd = r.gsdApplicable !== false;
-    const steps = r.approvalSteps || defaultAcademicSteps(gsd);
-    const nonAcademicSteps = r.approvalSteps || defaultNonAcademicSteps(Boolean(r.utilityUnderMedicine));
-    setRequests(prev => [...prev, {
-      ...r,
-      id: Date.now(),
-      status: 'Pending',
-      approvalSteps: r.type === 'academic' ? steps : nonAcademicSteps,
-      gsdApplicable: r.type === 'academic' ? gsd : undefined,
-    }]);
-  };
-  const updateRequest = (id, updates) => setRequests(prev => prev.map(r => r.id === id ? { ...r, ...updates } : r));
+  const addRequest = useCallback(async (r, { draft = false } = {}) => {
+    const created = await createRoomReservation(
+      {
+        ...r,
+        createdByUid: firebaseUser?.uid || r.createdByUid,
+        requestorEmail: r.requestorEmail || firebaseUser?.email,
+      },
+      { draft },
+    );
+    return created;
+  }, [firebaseUser]);
+
+  const updateRequest = useCallback(async (id, updates) => {
+    await updateRoomReservation(id, updates);
+  }, []);
+
+  const approveReservation = useCallback(async (reservationId, { action, remarks, approverUid, approverName, approverRole }) => {
+    await processApprovalAction({
+      reservationId,
+      action,
+      remarks,
+      approverUid,
+      approverName,
+      approverRole,
+    });
+  }, []);
+
+  const submitReservation = useCallback(async (reservationId) => {
+    await submitDraftReservation(reservationId);
+  }, []);
   const addUser = (u) => {
     const parts = (u.name || '').trim().split(/\s+/).filter(Boolean);
     const initials = parts.length >= 2 ? `${parts[0][0]}${parts[parts.length - 1][0]}` : (parts[0]?.[0] || '?');
@@ -233,6 +285,8 @@ export function AppProvider({ children }) {
       buildingsLoading,
       buildingsError,
       requests,
+      requestsLoading,
+      requestsError,
       users,
       expandedBuildings,
       expandedFloors,
@@ -242,6 +296,8 @@ export function AppProvider({ children }) {
       updateRoom,
       addRequest,
       updateRequest,
+      approveReservation,
+      submitReservation,
       addUser,
       updateBuilding,
       toggleBuilding,

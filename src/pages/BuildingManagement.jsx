@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Edit2, Trash2, Building2 } from 'lucide-react';
+import { Plus, Edit2, Building2, Calendar } from 'lucide-react';
 import Layout from '../components/Layout';
 import { useApp } from '../context/AppContext';
 import { useRolePermissions } from '../hooks/useRolePermissions';
+import { useRoomReservationFlow } from '../hooks/useRoomReservationFlow';
 import AddBuildingModal from '../components/modals/AddBuildingModal';
 import AddFloorModal from '../components/modals/AddFloorModal';
 
@@ -12,7 +13,8 @@ const statusBadge = { Available: 'badge-available', Occupied: 'badge-occupied', 
 export default function BuildingManagement() {
   const navigate = useNavigate();
   const { buildingList, buildingsLoading, buildingsError } = useApp();
-  const { canManageBuildings, canManageRoomMaintenance, canManageAssignedRooms, roleLabel } = useRolePermissions();
+  const { canManageBuildings, canManageRoomMaintenance, canManageAssignedRooms, canSubmitReservation, roleLabel } = useRolePermissions();
+  const { openReservation, modals } = useRoomReservationFlow();
   const [selectedBuilding, setSelectedBuilding] = useState(null);
   const [showAddBuilding, setShowAddBuilding] = useState(false);
   const [showAddFloor, setShowAddFloor] = useState(false);
@@ -159,6 +161,25 @@ export default function BuildingManagement() {
                             </td>
                             <td className="py-3 pr-4">
                               <div className="flex gap-2">
+                                {canSubmitReservation() && (
+                                  <button
+                                    type="button"
+                                    onClick={() => openReservation({
+                                      building: building.name,
+                                      buildingId: building.id,
+                                      room: room.id,
+                                      roomDocId: room.docId,
+                                      floor: room.floor,
+                                      floorId: floorObj?.floorId,
+                                      designatedVenue: `${room.id}, ${building.name} Floor ${room.floor}`,
+                                    })}
+                                    className="p-1.5 rounded-lg hover:bg-red-50 transition-colors"
+                                    style={{ color: '#7A0808' }}
+                                    title="Reserve room"
+                                  >
+                                    <Calendar size={14} />
+                                  </button>
+                                )}
                                 <button
                                   type="button"
                                   onClick={() =>
@@ -199,6 +220,8 @@ export default function BuildingManagement() {
           )}
         </div>
       )}
+
+      {modals}
 
       {canManageBuildings() && showAddBuilding && <AddBuildingModal onClose={() => setShowAddBuilding(false)} />}
       {canManageBuildings() && showAddFloor && building && (

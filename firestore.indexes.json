@@ -1,0 +1,13 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "approval_workflows",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "approvalType", "order": "ASCENDING" },
+        { "fieldPath": "levelNumber", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

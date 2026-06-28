@@ -38,6 +38,8 @@ export const COLLECTIONS = {
   NO_CLASS_PERIODS: 'no_class_periods',
   SCHEDULE_PLOT_REQUESTS: 'schedule_plot_requests',
   SCHEDULE_ENTRIES: 'schedule_entries',
+  APPROVAL_WORKFLOWS: 'approval_workflows',
+  ROOM_RESERVATIONS: 'room_reservations',
 };
 
 /** Default permission keys assignable to Registrar accounts by Developers */

@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Plus, Edit2, Building2, DoorOpen, Users, CheckSquare } from 'lucide-react';
+import { ArrowLeft, Plus, Edit2, Building2, DoorOpen, Users, CheckSquare, Calendar } from 'lucide-react';
 import Layout from '../components/Layout';
 import { useApp } from '../context/AppContext';
 import { useRolePermissions } from '../hooks/useRolePermissions';
+import { useRoomReservationFlow } from '../hooks/useRoomReservationFlow';
 import AddRoomModal from '../components/modals/AddRoomModal';
 import AddFloorModal from '../components/modals/AddFloorModal';
 import EditBuildingModal from '../components/modals/EditBuildingModal';
@@ -16,7 +17,8 @@ export default function BuildingDetails() {
   const navigate = useNavigate();
   const { id } = useParams();
   const { buildingList, buildingsLoading, updateBuilding } = useApp();
-  const { canManageBuildings, canEditRoom } = useRolePermissions();
+  const { canManageBuildings, canEditRoom, canSubmitReservation } = useRolePermissions();
+  const { openReservation, modals } = useRoomReservationFlow();
   const isRegistrar = canManageBuildings();
   const building = buildingList.find((b) => String(b.id) === String(id));
 
@@ -188,7 +190,24 @@ export default function BuildingDetails() {
                         <p className="text-xs text-gray-400 mb-2">{room.type}</p>
                         <p className="text-xs text-gray-500">Capacity: {room.capacity}</p>
                       </div>
-                      <div className="flex gap-2 flex-shrink-0">
+                      <div className="flex gap-2 flex-shrink-0 flex-wrap">
+                        {canSubmitReservation() && (
+                          <button
+                            type="button"
+                            onClick={() => openReservation({
+                              building: building.name,
+                              buildingId: building.id,
+                              room: room.id,
+                              roomDocId: room.docId,
+                              floor: activeFloor,
+                              floorId: floorEntry.floorId,
+                              designatedVenue: `${room.id}, ${building.name} Floor ${activeFloor}`,
+                            })}
+                            className="btn-outline-maroon text-xs py-1.5 px-4"
+                          >
+                            Reserve
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() =>
@@ -265,6 +284,8 @@ export default function BuildingDetails() {
           </div>
         )}
       </div>
+
+      {modals}
 
       {isRegistrar && showAddRoom && floorEntry.floorId && (
         <AddRoomModal

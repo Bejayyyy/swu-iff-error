@@ -22,6 +22,7 @@ import ScheduleHistory from './pages/ScheduleHistory';
 import AcademicCalendar from './pages/AcademicCalendar';
 import Reports from './pages/Reports';
 import SystemAdministration from './pages/SystemAdministration';
+import ApprovalWorkflowManagement from './pages/ApprovalWorkflowManagement';
 
 function RegistrarPage({ children }) {
   return <RegistrarRoute>{children}</RegistrarRoute>;
@@ -68,6 +69,7 @@ export default function App() {
             />
             <Route path="/dashboard" element={<RegistrarPage><Dashboard /></RegistrarPage>} />
             <Route path="/approvals" element={<RegistrarPage><ApprovalManagement /></RegistrarPage>} />
+            <Route path="/approval-workflow" element={<RegistrarPage><ApprovalWorkflowManagement /></RegistrarPage>} />
             <Route path="/course-scheduling" element={<RegistrarPage><CourseScheduling /></RegistrarPage>} />
             <Route path="/room-availability" element={<RegistrarPage><RoomAvailability /></RegistrarPage>} />
             <Route path="/room-finder" element={<RegistrarPage><RoomFinder /></RegistrarPage>} />

@@ -1,4 +1,5 @@
 import { ROLES } from '../firebase/constants';
+import { filterReservationsForRole } from './approvalWorkflow';
 
 /** Permission keys used across routes, nav, and page actions */
 export const PERMISSIONS = {
@@ -17,6 +18,7 @@ export const PERMISSIONS = {
   SYSTEM_ADMIN: 'system.admin',
   SCHEDULING_MANAGE: 'scheduling.manage',
   CALENDAR_MANAGE: 'calendar.manage',
+  APPROVAL_WORKFLOW_MANAGE: 'approval.workflow.manage',
 };
 
 const GENERAL_PERMISSIONS = [
@@ -67,6 +69,7 @@ export const ROUTE_PERMISSIONS = {
   '/academic-calendar': PERMISSIONS.ACADEMIC_CALENDAR_VIEW,
   '/reports': PERMISSIONS.REPORTS_VIEW,
   '/system-administration': PERMISSIONS.SYSTEM_ADMIN,
+  '/approval-workflow': PERMISSIONS.APPROVAL_WORKFLOW_MANAGE,
 };
 
 export const NAV_ITEMS = {
@@ -80,11 +83,12 @@ export const NAV_ITEMS = {
   academicCalendar: { label: 'Academic Calendar', path: '/academic-calendar', permission: PERMISSIONS.ACADEMIC_CALENDAR_VIEW },
   reports: { label: 'Reports & Analytics', path: '/reports', permission: PERMISSIONS.REPORTS_VIEW },
   systemAdmin: { label: 'System Administration', path: '/system-administration', permission: PERMISSIONS.SYSTEM_ADMIN },
+  approvalWorkflow: { label: 'Approval Workflow', path: '/approval-workflow', permission: PERMISSIONS.APPROVAL_WORKFLOW_MANAGE },
 };
 
 const ROLE_NAV_KEYS = {
   [ROLES.REGISTRAR]: [
-    'dashboard', 'approvals', 'courseScheduling', 'roomAvailability', 'roomFinder',
+    'dashboard', 'approvals', 'approvalWorkflow', 'courseScheduling', 'roomAvailability', 'roomFinder',
     'scheduleHistory', 'buildings', 'academicCalendar', 'reports', 'systemAdmin',
   ],
   [ROLES.DEAN]: [
@@ -182,6 +186,10 @@ export function canManageBuildings(role) {
   return hasPermission(role, PERMISSIONS.BUILDINGS_MANAGE);
 }
 
+export function canManageApprovalWorkflow(role) {
+  return hasPermission(role, PERMISSIONS.APPROVAL_WORKFLOW_MANAGE);
+}
+
 export function canManageCalendar(role) {
   return hasPermission(role, PERMISSIONS.CALENDAR_MANAGE);
 }
@@ -214,6 +222,13 @@ export function getApprovalsNavLabel(role) {
 }
 
 export function filterRequestsForRole(requests, role, profile) {
+  if (!requests?.length || !role) return [];
+
+  const hasDynamicWorkflow = requests.some((r) => Array.isArray(r.approvalRecords) && r.approvalRecords.length);
+  if (hasDynamicWorkflow) {
+    return filterReservationsForRole(requests, role, profile);
+  }
+
   if (role === ROLES.REGISTRAR) return requests;
   if (role === ROLES.DEAN) {
     return requests.filter(

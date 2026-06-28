@@ -2,10 +2,11 @@ import React, { useMemo, useState } from 'react';
 import { getInitialWeekStart } from '../utils/academicCalendarUtils';
 import { addDays } from '../constants/scheduleGrid';
 import { useNavigate, useLocation, useParams } from 'react-router-dom';
-import { ArrowLeft, Plus, Printer, MapPin, Clock, Users, Wrench, Edit2 } from 'lucide-react';
+import { ArrowLeft, Plus, Printer, MapPin, Clock, Users, Wrench, Edit2, Calendar } from 'lucide-react';
 import Layout from '../components/Layout';
 import { useApp } from '../context/AppContext';
 import { useRolePermissions } from '../hooks/useRolePermissions';
+import { useRoomReservationFlow } from '../hooks/useRoomReservationFlow';
 import EditRoomModal from '../components/modals/EditRoomModal';
 import WeeklyScheduleGrid from '../components/scheduling/WeeklyScheduleGrid';
 
@@ -20,7 +21,8 @@ export default function RoomDetails() {
   const { id } = useParams();
   const { buildingList } = useApp();
 
-  const { canEditRoom, canSubmitCourseSchedule, isRegistrar } = useRolePermissions();
+  const { canEditRoom, canSubmitCourseSchedule, canSubmitReservation, isRegistrar } = useRolePermissions();
+  const { openReservation, modals } = useRoomReservationFlow();
   const [scheduleTab, setScheduleTab] = useState('regular');
   const [semesterTab, setSemesterTab] = useState('1');
   const [weekStartDate, setWeekStartDate] = useState(() => getInitialWeekStart(null));
@@ -92,8 +94,25 @@ export default function RoomDetails() {
               <Edit2 size={14} /> Edit Room Details
             </button>
           )}
+          {canSubmitReservation() && (
+            <button
+              type="button"
+              className="btn-maroon"
+              onClick={() => openReservation({
+                building: buildingName,
+                buildingId,
+                room: displayRoom.id || displayRoom.roomCode,
+                roomDocId: displayRoom.docId,
+                floor,
+                floorId,
+                designatedVenue: `${displayRoom.name || displayRoom.id}, ${buildingName} Floor ${floor}`,
+              })}
+            >
+              <Calendar size={16} /> Reserve Room
+            </button>
+          )}
           {(isRegistrar || canSubmitCourseSchedule()) && (
-            <button type="button" className="btn-maroon"><Plus size={16} /> Add Schedule</button>
+            <button type="button" className="btn-outline-maroon"><Plus size={16} /> Add Schedule</button>
           )}
           <button type="button" className="btn-outline-maroon flex items-center gap-2"><Printer size={14} /> Print Schedule</button>
         </div>
@@ -158,6 +177,8 @@ export default function RoomDetails() {
         onPrevWeek={() => setWeekStartDate((d) => addDays(d, -7))}
         onNextWeek={() => setWeekStartDate((d) => addDays(d, 7))}
       />
+
+      {modals}
 
       {showEditRoom && buildingId && floorId && displayRoom?.docId && (
         <EditRoomModal

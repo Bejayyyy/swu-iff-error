@@ -32,7 +32,7 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const { buildingList, requests } = useApp();
 
-  const pendingReqs = requests.filter(r => r.status === 'Pending').length;
+  const pendingReqs = requests.filter((r) => r.status === 'Pending' || r.status === 'In Progress').length;
 
   return (
     <Layout title="Dashboard" subtitle="Facility Overview">

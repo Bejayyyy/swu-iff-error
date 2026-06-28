@@ -1,8 +1,10 @@
 import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Building2, Users, Layers, Calendar } from 'lucide-react';
+import { Search, Building2, Users, Layers, Calendar, BookOpen } from 'lucide-react';
 import Layout from '../components/Layout';
 import { useApp } from '../context/AppContext';
+import { useRolePermissions } from '../hooks/useRolePermissions';
+import { useRoomReservationFlow } from '../hooks/useRoomReservationFlow';
 import { CategoryFilterTabs, StatusFilterRow } from '../components/FilterControls';
 
 const TYPE_BADGE = {
@@ -16,6 +18,8 @@ const TYPE_BADGE = {
 export default function RoomFinder() {
   const navigate = useNavigate();
   const { buildingList } = useApp();
+  const { canSubmitReservation } = useRolePermissions();
+  const { openReservation, modals } = useRoomReservationFlow();
   const [q, setQ] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [category, setCategory] = useState('academic');
@@ -181,19 +185,37 @@ export default function RoomFinder() {
             </div>
               <button
                 type="button"
-                className="btn-maroon w-full justify-center mt-4 py-2.5 text-sm gap-2"
+                className="btn-outline-maroon w-full justify-center mt-4 py-2.5 text-sm gap-2"
                 style={{ borderRadius: 10 }}
-              onClick={() =>
-                navigate(`/room/${room.id}`, {
-                  state: { room, buildingId: room.buildingId, buildingName: room.buildingName, floor: room.floor },
-                })
-              }
-            >
-              <Calendar size={16} /> View Schedule
-            </button>
+                onClick={() =>
+                  navigate(`/room/${room.id}`, {
+                    state: { room, buildingId: room.buildingId, buildingName: room.buildingName, floor: room.floor },
+                  })
+                }
+              >
+                <Calendar size={16} /> View Schedule
+              </button>
+              {canSubmitReservation() && (
+                <button
+                  type="button"
+                  className="btn-maroon w-full justify-center mt-2 py-2.5 text-sm gap-2"
+                  style={{ borderRadius: 10 }}
+                  onClick={() => openReservation({
+                    building: room.buildingName,
+                    buildingId: room.buildingId,
+                    room: room.id,
+                    roomDocId: room.docId,
+                    floor: room.floor,
+                    designatedVenue: `${room.id}, ${room.buildingName} Floor ${room.floor}`,
+                  })}
+                >
+                  <BookOpen size={16} /> Reserve Room
+                </button>
+              )}
           </div>
         ))}
       </div>
+      {modals}
     </Layout>
   );
 }
