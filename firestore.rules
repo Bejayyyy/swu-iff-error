@@ -115,18 +115,23 @@ service cloud.firestore {
     function isPlotRecipientData(plotData) {
       return isSignedIn()
         && (
-          request.auth.uid in plotData.recipientUids
-          || plotData.recipientEmails.hasAny([request.auth.token.email])
+          (plotData.recipientUids != null && request.auth.uid in plotData.recipientUids)
+          || (plotData.recipientEmails != null && plotData.recipientEmails.hasAny([request.auth.token.email]))
         );
     }
 
     function isActivePlotRecipient(plotData) {
-      return isPlotRecipientData(plotData)
-        && (
-          plotData.activeRecipientUid == request.auth.uid
-          || plotData.activeRecipientEmail == request.auth.token.email
-        );
-    }
+  return isSignedIn()
+    && isPlotRecipientData(plotData)
+    && (
+      (plotData.activeRecipientUid != null && plotData.activeRecipientUid == request.auth.uid)
+      || (
+        isDean()
+        && plotData.activeRecipientEmail != null
+        && plotData.activeRecipientEmail == request.auth.token.email
+      )
+    );
+}
 
     match /schedule_plot_requests/{plotId} {
       allow read: if isMainRole() && isPhinmaedEmail() && (

@@ -24,6 +24,7 @@ import {
   addPlotEntry,
   updatePlotEntry,
   deletePlotEntry,
+  completePlotTurn,
   entriesToGridBlocks,
   hourToTimeInput,
 } from '../services/plotScheduleService';
@@ -90,12 +91,14 @@ export default function CourseScheduling() {
   const [weekStartDate, setWeekStartDate] = useState(() => getInitialWeekStart(null));
 
   const [entryModal, setEntryModal] = useState(null);
+  const [submittingTurn, setSubmittingTurn] = useState(false);
 
   useEffect(() => {
     setLoading(true);
     const onData = (list) => {
       setPlotRequests(list);
       setLoading(false);
+      setError('');
       setSelectedPlotId((prev) => prev || list[0]?.id || null);
     };
     const onErr = (err) => {
@@ -135,7 +138,9 @@ export default function CourseScheduling() {
       setPlotEntries([]);
       return undefined;
     }
-    return subscribePlotEntries(selectedPlotId, setPlotEntries, () => {});
+    return subscribePlotEntries(selectedPlotId, setPlotEntries, (err) => {
+      setError(err.message || 'Failed to load schedule blocks.');
+    });
   }, [selectedPlotId]);
 
   const myRecipient = useMemo(
@@ -276,6 +281,20 @@ export default function CourseScheduling() {
     }
   };
 
+  const handleSubmitTurn = async () => {
+    if (!canPlot || !selectedPlotId || !profile) return;
+    if (!window.confirm('Submit your plotted schedule to the registrar? The next dean in line will be notified when applicable.')) return;
+    setSubmittingTurn(true);
+    setError('');
+    try {
+      await completePlotTurn(selectedPlotId, profile);
+    } catch (err) {
+      setError(err.message || 'Failed to submit schedule.');
+    } finally {
+      setSubmittingTurn(false);
+    }
+  };
+
   const entryModalDayStatus = entryModal
     ? getPlotDayStatus(entryModal.date, calendarData, semester, scheduleTab)
     : null;
@@ -413,6 +432,17 @@ export default function CourseScheduling() {
                           ? 'You have completed plotting for this request.'
                           : 'Waiting for earlier deans (CAS plots first) to finish.'}
                     </p>
+                    {canPlot && (
+                      <button
+                        type="button"
+                        className="btn-maroon text-xs mt-3 gap-2"
+                        onClick={handleSubmitTurn}
+                        disabled={submittingTurn}
+                      >
+                        <Send size={14} />
+                        {submittingTurn ? 'Submitting…' : 'Submit schedule to registrar'}
+                      </button>
+                    )}
                   </div>
                 )}
               </div>

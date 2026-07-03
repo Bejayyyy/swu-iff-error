@@ -7,6 +7,22 @@
         { "fieldPath": "approvalType", "order": "ASCENDING" },
         { "fieldPath": "levelNumber", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "schedule_plot_requests",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "recipientUids", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "schedule_plot_requests",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "recipientEmails", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

@@ -1,6 +1,7 @@
 import {
   collection,
   doc,
+  getDoc,
   onSnapshot,
   setDoc,
   updateDoc,
@@ -8,6 +9,7 @@ import {
   serverTimestamp,
   query,
   orderBy,
+  where,
 } from 'firebase/firestore';
 import { db } from '../firebase/firebase';
 import { COLLECTIONS } from '../firebase/constants';
@@ -44,18 +46,79 @@ export function subscribePlotRequests(onData, onError) {
   );
 }
 
+function sortPlotsByCreatedAt(plots) {
+  return [...plots].sort((a, b) => {
+    const ta = a.createdAt?.seconds ?? a.createdAt?.toMillis?.() ?? 0;
+    const tb = b.createdAt?.seconds ?? b.createdAt?.toMillis?.() ?? 0;
+    return tb - ta;
+  });
+}
+
+function mapPlotDocs(docs) {
+  return docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+
+function normalizePlotEmail(email) {
+  return (email || '').trim().toLowerCase() || null;
+}
+
+/** Dean view — scoped queries only (Firestore rejects full-collection reads for non-registrars). */
 export function subscribePlotRequestsForUser(userId, userEmail, onData, onError) {
-  return subscribePlotRequests((all) => {
-    const normalizedEmail = (userEmail || '').toLowerCase();
-    const filtered = all.filter((plot) => {
-      if (plot.recipientUids?.includes(userId)) return true;
-      if (normalizedEmail && plot.recipientEmails?.some((e) => (e || '').toLowerCase() === normalizedEmail)) return true;
-      return (plot.recipients || []).some(
-        (r) => r.uid === userId || (normalizedEmail && (r.email || '').toLowerCase() === normalizedEmail),
-      );
+  const authEmail = (userEmail || '').trim();
+  const col = collection(db, COLLECTIONS.SCHEDULE_PLOT_REQUESTS);
+
+  if (!userId && !authEmail) {
+    onData([]);
+    return () => {};
+  }
+
+  const uidResults = userId ? { docs: null } : { docs: [] };
+  const emailResults = !userId && authEmail ? { docs: null } : { docs: [] };
+
+  const mergeAndEmit = () => {
+    if (userId && uidResults.docs === null) return;
+    if (!userId && authEmail && emailResults.docs === null) return;
+
+    const byId = new Map();
+    [...mapPlotDocs(uidResults.docs || []), ...mapPlotDocs(emailResults.docs || [])].forEach((plot) => {
+      byId.set(plot.id, plot);
     });
-    onData(filtered);
-  }, onError);
+    onData(sortPlotsByCreatedAt(Array.from(byId.values())));
+  };
+
+  const unsubs = [];
+
+  if (userId) {
+    const qUid = query(
+      col,
+      where('recipientUids', 'array-contains', userId),
+      orderBy('createdAt', 'desc'),
+    );
+    unsubs.push(onSnapshot(
+      qUid,
+      (snap) => {
+        uidResults.docs = snap.docs;
+        mergeAndEmit();
+      },
+      onError,
+    ));
+  } else if (authEmail) {
+    const qEmail = query(
+      col,
+      where('recipientEmails', 'array-contains', authEmail),
+      orderBy('createdAt', 'desc'),
+    );
+    unsubs.push(onSnapshot(
+      qEmail,
+      (snap) => {
+        emailResults.docs = snap.docs;
+        mergeAndEmit();
+      },
+      onError,
+    ));
+  }
+
+  return () => unsubs.forEach((unsub) => unsub());
 }
 
 export function subscribePlotEntries(plotId, onData, onError) {
@@ -78,7 +141,7 @@ function buildRecipientRecord(raw, plotOrder) {
     id: raw.id || `rcp_${Date.now()}_${plotOrder}`,
     assignType: raw.assignType,
     uid: raw.uid || null,
-    email: (raw.email || '').toLowerCase() || null,
+    email: normalizePlotEmail(raw.email),
     name: raw.name || '',
     college,
     deanTier: tier,
@@ -164,6 +227,57 @@ export async function updatePlotEntry(plotId, entryId, patch) {
 
 export async function deletePlotEntry(plotId, entryId) {
   await deleteDoc(doc(entriesRef(plotId), entryId));
+}
+
+function findRecipientIndex(recipients, profile) {
+  const profileUid = profile?.uid;
+  const profileEmail = normalizePlotEmail(profile?.email);
+  return recipients.findIndex(
+    (r) => (profileUid && r.uid === profileUid)
+      || (profileEmail && normalizePlotEmail(r.email) === profileEmail),
+  );
+}
+
+/** Dean marks their plotting turn complete and passes to the next college dean (or finishes the request). */
+export async function completePlotTurn(plotId, profile) {
+  const snap = await getDoc(plotRef(plotId));
+  if (!snap.exists()) throw new Error('Plot schedule not found.');
+
+  const plot = snap.data();
+  const recipients = [...(plot.recipients || [])];
+  const myIdx = findRecipientIndex(recipients, profile);
+  if (myIdx < 0) throw new Error('You are not assigned to this plot schedule.');
+
+  const me = recipients[myIdx];
+  if (me.status !== RECIPIENT_PLOT_STATUS.ACTIVE) {
+    throw new Error('It is not your turn to submit yet.');
+  }
+
+  recipients[myIdx] = { ...me, status: RECIPIENT_PLOT_STATUS.COMPLETED };
+  const nextIdx = recipients.findIndex(
+    (r, idx) => idx > myIdx && r.status !== RECIPIENT_PLOT_STATUS.COMPLETED,
+  );
+
+  const patch = {
+    recipients,
+    updatedAt: serverTimestamp(),
+  };
+
+  if (nextIdx >= 0) {
+    recipients[nextIdx] = { ...recipients[nextIdx], status: RECIPIENT_PLOT_STATUS.ACTIVE };
+    const next = recipients[nextIdx];
+    patch.currentTurnRecipientId = next.id;
+    patch.activeRecipientUid = next.uid || null;
+    patch.activeRecipientEmail = next.email || null;
+    patch.status = PLOT_REQUEST_STATUS.IN_PROGRESS;
+  } else {
+    patch.currentTurnRecipientId = null;
+    patch.activeRecipientUid = null;
+    patch.activeRecipientEmail = null;
+    patch.status = PLOT_REQUEST_STATUS.COMPLETED;
+  }
+
+  await updateDoc(plotRef(plotId), patch);
 }
 
 export function entriesToGridBlocks(entries, weekDates = []) {
