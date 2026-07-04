@@ -4,6 +4,7 @@ import {
   query,
   serverTimestamp,
   setDoc,
+  updateDoc,
   where,
   doc,
 } from 'firebase/firestore';
@@ -11,6 +12,7 @@ import { db } from '../firebase/firebase';
 import { COLLECTIONS, ROLES, USER_STATUS } from '../firebase/constants';
 import { collegePriorityFromValue, isCasDepartment } from '../constants/plotScheduling';
 import { getInitials, normalizeEmail, validateInstitutionalEmail } from '../firebase/authHelpers';
+import { getRoleDefinition } from '../constants/rolePermissions';
 
 export const STAFF_ROLE_OPTIONS = [
   { value: 'dean', label: 'Dean' },
@@ -20,33 +22,47 @@ export const STAFF_ROLE_OPTIONS = [
   { value: 'student_life', label: 'Student Life' },
 ];
 
-export function roleLabelFromValue(role) {
+export function roleLabelFromValue(role, roleDefinitions = {}) {
+  const def = roleDefinitions[role];
+  if (def?.label) return def.label;
   const hit = STAFF_ROLE_OPTIONS.find((r) => r.value === role);
   return hit?.label || role;
 }
 
-export function subscribeStaffUsers(onData, onError) {
+function mapStaffUserDoc(u, roleDefinitions = {}) {
+  return {
+    id: u.uid,
+    uid: u.uid,
+    name: u.displayName,
+    email: u.email,
+    role: roleLabelFromValue(u.role, roleDefinitions),
+    roleValue: u.role,
+    department: u.department || '',
+    status: u.status === USER_STATUS.ACTIVE ? 'Active' : 'Inactive',
+    initials: u.initials || getInitials(u.displayName, u.email),
+    permissions: u.permissions || [],
+    navKeys: u.navKeys || [],
+    useCustomAccess: Boolean(u.permissions?.length || u.navKeys?.length),
+  };
+}
+
+export function subscribeStaffUsers(onData, onError, roleValues = null, roleDefinitions = {}) {
+  const roles = roleValues?.length
+    ? roleValues
+    : STAFF_ROLE_OPTIONS.map((r) => r.value);
+
   const q = query(
     collection(db, COLLECTIONS.USERS),
-    where('role', 'in', STAFF_ROLE_OPTIONS.map((r) => r.value)),
+    where('role', 'in', roles.slice(0, 30)),
   );
+
   return onSnapshot(
     q,
     (snap) => {
       const users = snap.docs
         .map((d) => ({ uid: d.id, ...d.data() }))
         .filter((u) => u.status !== 'migrated')
-        .map((u) => ({
-          id: u.uid,
-          uid: u.uid,
-          name: u.displayName,
-          email: u.email,
-          role: roleLabelFromValue(u.role),
-          roleValue: u.role,
-          department: u.department || '',
-          status: u.status === USER_STATUS.ACTIVE ? 'Active' : 'Inactive',
-          initials: u.initials || getInitials(u.displayName, u.email),
-        }));
+        .map((u) => mapStaffUserDoc(u, roleDefinitions));
       onData(users);
     },
     onError,
@@ -104,31 +120,71 @@ export function formatDeanOptionLabel(dean) {
   return parts.join(' · ');
 }
 
-export async function createStaffUserByEmailInvite({ name, email, department, roleValue }, createdBy) {
+export async function createStaffUserByEmailInvite({
+  name,
+  email,
+  department,
+  roleValue,
+  permissions = [],
+  navKeys = [],
+}, createdBy) {
   const validation = validateInstitutionalEmail(email);
   if (!validation.valid) throw new Error(validation.message);
 
   const normalized = normalizeEmail(email);
   const docId = `invite_${normalized}`;
-  await setDoc(
-    doc(db, COLLECTIONS.USERS, docId),
-    {
-      email: normalized,
-      displayName: name.trim(),
-      role: roleValue,
-      status: USER_STATUS.ACTIVE,
-      department: department?.trim() || '',
-      initials: getInitials(name, normalized),
-      authProviders: ['google'],
-      mustSetPassword: true,
-      passwordEnabled: false,
-      invited: true,
-      createdBy: createdBy || null,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-      lastLoginAt: null,
-    },
-    { merge: true },
-  );
+  const payload = {
+    email: normalized,
+    displayName: name.trim(),
+    role: roleValue,
+    status: USER_STATUS.ACTIVE,
+    department: department?.trim() || '',
+    initials: getInitials(name, normalized),
+    authProviders: ['google'],
+    mustSetPassword: true,
+    passwordEnabled: false,
+    invited: true,
+    createdBy: createdBy || null,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+    lastLoginAt: null,
+  };
+
+  if (permissions?.length) payload.permissions = permissions;
+  if (navKeys?.length) payload.navKeys = navKeys;
+
+  await setDoc(doc(db, COLLECTIONS.USERS, docId), payload, { merge: true });
 }
 
+export async function updateStaffUser({
+  uid,
+  name,
+  department,
+  roleValue,
+  status,
+  permissions = [],
+  navKeys = [],
+}) {
+  if (!uid) throw new Error('User id is required.');
+
+  const patch = {
+    displayName: name?.trim() || '',
+    department: department?.trim() || '',
+    role: roleValue,
+    status: status || USER_STATUS.ACTIVE,
+    initials: getInitials(name, ''),
+    permissions: permissions || [],
+    navKeys: navKeys || [],
+    updatedAt: serverTimestamp(),
+  };
+
+  await updateDoc(doc(db, COLLECTIONS.USERS, uid), patch);
+}
+
+export function getDefaultAccessForRole(roleValue, roleDefinitions = {}) {
+  const def = getRoleDefinition(roleValue, roleDefinitions);
+  return {
+    permissions: def.permissions || [],
+    navKeys: def.navKeys || [],
+  };
+}

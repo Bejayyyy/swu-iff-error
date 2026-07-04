@@ -2,6 +2,7 @@ import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AppProvider } from './context/AppContext';
 import { AuthProvider } from './context/AuthContext';
+import { RoleConfigProvider } from './context/RoleConfigContext';
 import { DeveloperRoute, PasswordSetupRoute, PublicOnlyRoute, RegistrarRoute } from './components/auth/ProtectedRoute';
 
 import Login from './pages/Login';
@@ -31,8 +32,9 @@ function RegistrarPage({ children }) {
 export default function App() {
   return (
     <AuthProvider>
-      <AppProvider>
-        <BrowserRouter>
+      <RoleConfigProvider>
+        <AppProvider>
+          <BrowserRouter>
           <Routes>
             <Route path="/" element={<Navigate to="/login" replace />} />
             <Route
@@ -84,7 +86,8 @@ export default function App() {
             <Route path="/academic-request/:id" element={<RegistrarPage><AcademicRequestDetails /></RegistrarPage>} />
           </Routes>
         </BrowserRouter>
-      </AppProvider>
+        </AppProvider>
+      </RoleConfigProvider>
     </AuthProvider>
   );
 }

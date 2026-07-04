@@ -1,9 +1,9 @@
 import React from 'react';
-import { X, Mail, Shield } from 'lucide-react';
+import { X, Mail, Shield, Pencil } from 'lucide-react';
 
 const R = 10;
 
-export default function UserActionsModal({ user, onClose }) {
+export default function UserActionsModal({ user, onClose, onEdit }) {
   if (!user) return null;
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -25,18 +25,19 @@ export default function UserActionsModal({ user, onClose }) {
             <Mail size={14} className="text-[#800000]" /> {user.email}
           </p>
           <p className="text-xs flex items-center gap-2" style={{ color: '#2B3235', opacity: 0.75 }}>
-            <Shield size={14} className="text-[#800000]" /> {user.role} · {user.department}
+            <Shield size={14} className="text-[#800000]" /> {user.role} · {user.department || 'No department'}
           </p>
 
-          <button type="button" className="btn-maroon w-full justify-center py-2.5" style={{ borderRadius: R }} onClick={onClose}>
-            Send password reset link
-          </button>
-          <button type="button" className="btn-outline-maroon w-full justify-center py-2.5" style={{ borderRadius: R }} onClick={onClose}>
-            View audit log
+          <button
+            type="button"
+            className="btn-maroon w-full justify-center py-2.5 gap-2"
+            style={{ borderRadius: R }}
+            onClick={() => { onEdit?.(user); onClose(); }}
+          >
+            <Pencil size={14} /> Edit user & access
           </button>
         </div>
       </div>
     </div>
   );
 }
-

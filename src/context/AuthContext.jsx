@@ -66,7 +66,8 @@ export function AuthProvider({ children }) {
         );
       }
 
-      const allowed = canAccessDeveloperApp(userProfile) || canAccessMainApp(userProfile);
+      const allowed = canAccessDeveloperApp(userProfile)
+        || (await canAccessMainApp(userProfile));
       if (!allowed) {
         await clearSession();
         if (userProfile.status !== 'active') {

@@ -116,8 +116,12 @@ export function canAccessRegistrarApp(profile) {
   return profile?.role === ROLES.REGISTRAR && isActiveProfile(profile);
 }
 
-export function canAccessMainApp(profile) {
-  return MAIN_APP_ROLES.includes(profile?.role) && isActiveProfile(profile);
+export async function canAccessMainApp(profile) {
+  if (!isActiveProfile(profile)) return false;
+  if (MAIN_APP_ROLES.includes(profile?.role)) return true;
+  if (!profile?.role || profile.role === ROLES.DEVELOPER) return false;
+  const snap = await getDoc(doc(db, COLLECTIONS.ROLE_DEFINITIONS, profile.role));
+  return snap.exists();
 }
 
 export function canAccessDeveloperApp(profile) {

@@ -40,6 +40,7 @@ export const COLLECTIONS = {
   SCHEDULE_ENTRIES: 'schedule_entries',
   APPROVAL_WORKFLOWS: 'approval_workflows',
   ROOM_RESERVATIONS: 'room_reservations',
+  ROLE_DEFINITIONS: 'role_definitions',
 };
 
 /** Default permission keys assignable to Registrar accounts by Developers */

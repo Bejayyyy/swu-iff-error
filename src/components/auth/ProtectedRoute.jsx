@@ -1,7 +1,8 @@
 import React from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { canAccessRoute } from '../../constants/rolePermissions';
+import { useRoleConfig } from '../../context/RoleConfigContext';
+import { canAccessRouteForProfile } from '../../constants/rolePermissions';
 import { DEVELOPER_ROUTE_PREFIX, MAIN_APP_ROLES, REGISTRAR_HOME, ROLES } from '../../firebase/constants';
 
 function AuthLoading() {
@@ -37,19 +38,21 @@ export function DeveloperRoute({ children }) {
 
 export function RegistrarRoute({ children }) {
   const { loading, profile, firebaseUser } = useAuth();
+  const { roleDefinitions, loading: rolesLoading } = useRoleConfig();
   const location = useLocation();
 
-  if (loading) return <AuthLoading />;
+  if (loading || rolesLoading) return <AuthLoading />;
   if (!firebaseUser || !profile) {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
   if (profile.role === ROLES.DEVELOPER) {
     return <Navigate to={DEVELOPER_ROUTE_PREFIX} replace />;
   }
-  if (!MAIN_APP_ROLES.includes(profile.role) || profile.status !== 'active') {
+  const hasAppRole = MAIN_APP_ROLES.includes(profile.role) || Boolean(roleDefinitions[profile.role]);
+  if (!hasAppRole || profile.status !== 'active') {
     return <Navigate to="/login" replace />;
   }
-  if (!canAccessRoute(profile.role, location.pathname)) {
+  if (!canAccessRouteForProfile(profile, location.pathname, roleDefinitions)) {
     return <Navigate to={REGISTRAR_HOME} replace />;
   }
   return children;

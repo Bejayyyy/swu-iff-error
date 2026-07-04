@@ -1,14 +1,24 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { X } from 'lucide-react';
 import { STAFF_ROLE_OPTIONS } from '../../services/systemUserService';
 
 const R = 10;
-const ROLES = ['Any', ...STAFF_ROLE_OPTIONS.map((r) => r.label)];
 const STATUSES = ['Any', 'Active', 'Inactive'];
 
-export default function UserFilterModal({ onClose, onApply, initialRole = 'Any', initialStatus = 'Any' }) {
+export default function UserFilterModal({
+  onClose,
+  onApply,
+  initialRole = 'Any',
+  initialStatus = 'Any',
+  roleOptions = [],
+}) {
   const [role, setRole] = useState(initialRole);
   const [status, setStatus] = useState(initialStatus);
+
+  const roles = useMemo(() => {
+    const opts = roleOptions.length ? roleOptions : STAFF_ROLE_OPTIONS;
+    return [{ value: 'Any', label: 'Any' }, ...opts.map((r) => ({ value: r.value, label: r.label }))];
+  }, [roleOptions]);
 
   useEffect(() => {
     setRole(initialRole);
@@ -37,8 +47,8 @@ export default function UserFilterModal({ onClose, onApply, initialRole = 'Any',
           <div>
             <label className="form-label">Role</label>
             <select className="form-input" value={role} onChange={(e) => setRole(e.target.value)}>
-              {ROLES.map((r) => (
-                <option key={r} value={r}>{r}</option>
+              {roles.map((r) => (
+                <option key={r.value} value={r.value}>{r.label}</option>
               ))}
             </select>
           </div>

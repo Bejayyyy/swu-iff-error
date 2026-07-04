@@ -1,0 +1,130 @@
+import React, { useState } from 'react';
+import { X } from 'lucide-react';
+import PermissionCheckboxGrid from '../admin/PermissionCheckboxGrid';
+import { getAllCatalogNavKeys, getAllCatalogPermissionKeys } from '../../constants/accessCatalog';
+
+export default function AddRoleModal({ onClose, onSave, saving = false }) {
+  const [form, setForm] = useState({
+    key: '',
+    label: '',
+    permissions: [],
+    navKeys: ['dashboard', 'approvals'],
+  });
+  const [error, setError] = useState('');
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setError('');
+    const key = form.key.trim().toLowerCase().replace(/\s+/g, '_');
+    if (!key) {
+      setError('Role key is required.');
+      return;
+    }
+    if (!/^[a-z][a-z0-9_]*$/.test(key)) {
+      setError('Role key must start with a letter and use only lowercase letters, numbers, and underscores.');
+      return;
+    }
+    if (!form.label.trim()) {
+      setError('Role label is required.');
+      return;
+    }
+    try {
+      await onSave({
+        id: key,
+        label: form.label.trim(),
+        permissions: form.permissions,
+        navKeys: form.navKeys,
+        isSystem: false,
+      });
+      onClose();
+    } catch (err) {
+      setError(err.message || 'Failed to create role.');
+    }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div
+        className="bg-white rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-xl relative"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button type="button" onClick={onClose} className="absolute right-4 top-4 text-gray-400 hover:text-gray-700 z-10">
+          <X size={20} />
+        </button>
+        <form onSubmit={submit} className="p-8 pt-10">
+          <h2 className="font-black text-lg mb-1" style={{ color: '#7A0808' }}>Add custom role</h2>
+          <p className="text-xs font-medium mb-4" style={{ color: '#2B3235', opacity: 0.65 }}>
+            Create a new role and choose what navigation and actions its users can access.
+          </p>
+
+          {error && (
+            <p className="text-xs font-semibold text-red-700 bg-red-50 border border-red-100 rounded-lg px-3 py-2 mb-4">
+              {error}
+            </p>
+          )}
+
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="form-label">Role key</label>
+                <input
+                  className="form-input"
+                  placeholder="e.g. lab_coordinator"
+                  value={form.key}
+                  onChange={(e) => setForm((f) => ({ ...f, key: e.target.value }))}
+                  required
+                />
+              </div>
+              <div>
+                <label className="form-label">Display label</label>
+                <input
+                  className="form-input"
+                  placeholder="e.g. Lab Coordinator"
+                  value={form.label}
+                  onChange={(e) => setForm((f) => ({ ...f, label: e.target.value }))}
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="text-[10px] font-bold px-2 py-1 rounded border border-gray-200"
+                onClick={() => setForm((f) => ({
+                  ...f,
+                  permissions: getAllCatalogPermissionKeys(),
+                  navKeys: getAllCatalogNavKeys(),
+                }))}
+              >
+                Select all
+              </button>
+              <button
+                type="button"
+                className="text-[10px] font-bold px-2 py-1 rounded border border-gray-200"
+                onClick={() => setForm((f) => ({ ...f, permissions: [], navKeys: ['dashboard'] }))}
+              >
+                Clear all
+              </button>
+            </div>
+
+            <PermissionCheckboxGrid
+              permissions={form.permissions}
+              navKeys={form.navKeys}
+              onChange={({ permissions, navKeys }) => setForm((f) => ({ ...f, permissions, navKeys }))}
+            />
+          </div>
+
+          <div className="flex gap-2 mt-8">
+            <button type="button" className="btn-outline-maroon flex-1 justify-center py-2.5" onClick={onClose} disabled={saving}>
+              Cancel
+            </button>
+            <button type="submit" className="btn-maroon flex-1 justify-center py-2.5" disabled={saving}>
+              {saving ? 'Creating…' : 'Create role'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}

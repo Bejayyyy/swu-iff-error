@@ -24,17 +24,30 @@ service cloud.firestore {
       return hasRole('registrar');
     }
 
+    function isStaffRole(role) {
+      return role in ['dean', 'organization_head', 'teacher', 'gsd', 'student_life'];
+    }
+
+    function roleDefinitionExists(role) {
+      return exists(/databases/$(database)/documents/role_definitions/$(role));
+    }
+
+    function isStaffRoleOrDefined(role) {
+      return isStaffRole(role) || roleDefinitionExists(role);
+    }
+
     function isMainRole() {
       return hasRole('registrar')
         || hasRole('dean')
         || hasRole('organization_head')
         || hasRole('teacher')
         || hasRole('gsd')
-        || hasRole('student_life');
-    }
-
-    function isStaffRole(role) {
-      return role in ['dean', 'organization_head', 'teacher', 'gsd', 'student_life'];
+        || hasRole('student_life')
+        || (
+          isSignedIn()
+          && userDoc().data.status == 'active'
+          && roleDefinitionExists(userDoc().data.role)
+        );
     }
 
     function isPhinmaedEmail() {
@@ -76,7 +89,7 @@ service cloud.firestore {
         || (
           isRegistrar()
           && isPhinmaedEmail()
-          && isStaffRole(request.resource.data.role)
+          && isStaffRoleOrDefined(request.resource.data.role)
           && request.resource.data.email.matches('.*@phinmaed\\.com$')
           && request.resource.data.status in ['active', 'inactive']
         );
@@ -93,6 +106,14 @@ service cloud.firestore {
         && isStaffRole(resource.data.role)
         && resource.data.email == request.auth.token.email
         && request.resource.data.email == resource.data.email;
+
+      allow update: if isRegistrar()
+        && isPhinmaedEmail()
+        && isStaffRoleOrDefined(resource.data.role)
+        && isStaffRoleOrDefined(request.resource.data.role)
+        && request.resource.data.email == resource.data.email
+        && request.resource.data.email.matches('.*@phinmaed\\.com$')
+        && request.resource.data.status in ['active', 'inactive'];
 
       allow update: if isSignedIn()
         && isPhinmaedEmail()
@@ -112,6 +133,15 @@ service cloud.firestore {
       allow write: if isDeveloper() && isPhinmaedEmail();
     }
 
+    match /role_definitions/{roleId} {
+      allow read: if isSignedIn() && isPhinmaedEmail() && (isDeveloper() || isMainRole());
+      allow create, update, delete: if isRegistrar() && isPhinmaedEmail();
+    }
+
+    function isDean() {
+      return hasRole('dean');
+    }
+
     function isPlotRecipientData(plotData) {
       return isSignedIn()
         && (
@@ -121,17 +151,18 @@ service cloud.firestore {
     }
 
     function isActivePlotRecipient(plotData) {
-  return isSignedIn()
-    && isPlotRecipientData(plotData)
-    && (
-      (plotData.activeRecipientUid != null && plotData.activeRecipientUid == request.auth.uid)
-      || (
-        isDean()
-        && plotData.activeRecipientEmail != null
-        && plotData.activeRecipientEmail == request.auth.token.email
-      )
-    );
-}
+      return isSignedIn()
+        && isPlotRecipientData(plotData)
+        && (
+          plotData.activeRecipientUid == request.auth.uid
+          || (
+            isDean()
+            && plotData.activeRecipientUid == null
+            && plotData.recipientEmails != null
+            && plotData.recipientEmails.hasAny([request.auth.token.email])
+          )
+        );
+    }
 
     match /schedule_plot_requests/{plotId} {
       allow read: if isMainRole() && isPhinmaedEmail() && (
@@ -220,7 +251,8 @@ service cloud.firestore {
         && collection != 'academic_calendars'
         && collection != 'schedule_plot_requests'
         && collection != 'approval_workflows'
-        && collection != 'room_reservations';
+        && collection != 'room_reservations'
+        && collection != 'role_definitions';
     }
   }
 }

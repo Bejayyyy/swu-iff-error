@@ -118,23 +118,68 @@ const ROLE_LABELS = {
   [ROLES.REGISTRAR]: 'Registrar',
 };
 
+/** Static defaults used to seed Firestore role definitions */
+export const DEFAULT_ROLE_DEFINITIONS = Object.entries(ROLE_NAV_KEYS)
+  .filter(([role]) => role !== ROLES.REGISTRAR && role !== ROLES.DEVELOPER)
+  .map(([role]) => ({
+    id: role,
+    label: ROLE_LABELS[role] || role,
+    isSystem: true,
+    permissions: ROLE_PERMISSIONS[role] || [],
+    navKeys: ROLE_NAV_KEYS[role] || [],
+  }));
+
 export function getRoleLabel(role) {
   return ROLE_LABELS[role] || role;
 }
 
-export function getPermissionsForRole(role) {
-  return ROLE_PERMISSIONS[role] || [];
+export function getRoleDefinition(role, roleDefinitions = {}) {
+  if (roleDefinitions[role]) return roleDefinitions[role];
+  return {
+    id: role,
+    label: getRoleLabel(role),
+    permissions: ROLE_PERMISSIONS[role] || [],
+    navKeys: ROLE_NAV_KEYS[role] || ROLE_NAV_KEYS[ROLES.TEACHER] || [],
+    isSystem: Boolean(ROLE_PERMISSIONS[role]),
+  };
 }
 
-export function hasPermission(role, permission) {
-  if (!role || !permission) return false;
-  if (role === ROLES.REGISTRAR) return true;
-  return getPermissionsForRole(role).includes(permission);
+export function getEffectivePermissions(profile, roleDefinitions = {}) {
+  if (!profile?.role) return [];
+  if (profile.role === ROLES.REGISTRAR) return Object.values(PERMISSIONS);
+  if (Array.isArray(profile.permissions) && profile.permissions.length > 0) {
+    return profile.permissions;
+  }
+  return getRoleDefinition(profile.role, roleDefinitions).permissions || [];
 }
 
-export function canAccessRoute(role, pathname) {
-  if (!role) return false;
-  if (role === ROLES.REGISTRAR) return true;
+export function getEffectiveNavKeys(profile, roleDefinitions = {}) {
+  if (!profile?.role) return [];
+  if (profile.role === ROLES.REGISTRAR) return ROLE_NAV_KEYS[ROLES.REGISTRAR];
+  if (Array.isArray(profile.navKeys) && profile.navKeys.length > 0) {
+    return profile.navKeys;
+  }
+  return getRoleDefinition(profile.role, roleDefinitions).navKeys || [];
+}
+
+export function hasEffectivePermission(profile, permission, roleDefinitions = {}) {
+  if (!profile?.role || !permission) return false;
+  if (profile.role === ROLES.REGISTRAR) return true;
+  return getEffectivePermissions(profile, roleDefinitions).includes(permission);
+}
+
+export function getEffectiveNavItems(profile, roleDefinitions = {}) {
+  const keys = getEffectiveNavKeys(profile, roleDefinitions);
+  const perms = getEffectivePermissions(profile, roleDefinitions);
+  return keys
+    .map((key) => NAV_ITEMS[key])
+    .filter(Boolean)
+    .filter((item) => !item.permission || perms.includes(item.permission));
+}
+
+export function canAccessRouteForProfile(profile, pathname, roleDefinitions = {}) {
+  if (!profile?.role) return false;
+  if (profile.role === ROLES.REGISTRAR) return true;
 
   const basePath = pathname.split('/').slice(0, 2).join('/') || pathname;
   const normalized = basePath.startsWith('/building') || basePath.startsWith('/room')
@@ -145,53 +190,83 @@ export function canAccessRoute(role, pathname) {
 
   const required = ROUTE_PERMISSIONS[normalized];
   if (required === undefined) return true;
-  if (required === null) return getPermissionsForRole(role).length > 0;
-  return hasPermission(role, required);
+  if (required === null) return getEffectivePermissions(profile, roleDefinitions).length > 0;
+  return hasEffectivePermission(profile, required, roleDefinitions);
 }
 
-export function getNavItemsForRole(role) {
-  const keys = ROLE_NAV_KEYS[role] || ROLE_NAV_KEYS[ROLES.TEACHER];
-  return keys.map((key) => NAV_ITEMS[key]).filter(Boolean);
+export function getPermissionsForRole(role, roleDefinitions = {}) {
+  return getRoleDefinition(role, roleDefinitions).permissions || [];
 }
 
-export function canSubmitReservation(role) {
-  return hasPermission(role, PERMISSIONS.RESERVATION_SUBMIT);
+export function hasPermission(role, permission, roleDefinitions = {}) {
+  if (!role || !permission) return false;
+  if (role === ROLES.REGISTRAR) return true;
+  return getPermissionsForRole(role, roleDefinitions).includes(permission);
 }
 
-export function canSubmitCourseSchedule(role) {
-  return hasPermission(role, PERMISSIONS.SCHEDULING_SUBMIT);
+export function canAccessRoute(role, pathname, roleDefinitions = {}) {
+  if (!role) return false;
+  if (role === ROLES.REGISTRAR) return true;
+  return canAccessRouteForProfile({ role }, pathname, roleDefinitions);
 }
 
-export function canEndorseActivity(role) {
-  return hasPermission(role, PERMISSIONS.APPROVAL_ENDORSE_ACTIVITY);
+export function getNavItemsForRole(role, roleDefinitions = {}) {
+  const keys = getRoleDefinition(role, roleDefinitions).navKeys || ROLE_NAV_KEYS[ROLES.TEACHER] || [];
+  const perms = getPermissionsForRole(role, roleDefinitions);
+  return keys
+    .map((key) => NAV_ITEMS[key])
+    .filter(Boolean)
+    .filter((item) => !item.permission || perms.includes(item.permission));
 }
 
-export function canManageRoomActivityApproval(role) {
-  return hasPermission(role, PERMISSIONS.APPROVAL_MANAGE_ROOM_ACTIVITY);
+export function canSubmitReservation(role, roleDefinitions = {}, profile = null) {
+  if (profile) return hasEffectivePermission(profile, PERMISSIONS.RESERVATION_SUBMIT, roleDefinitions);
+  return hasPermission(role, PERMISSIONS.RESERVATION_SUBMIT, roleDefinitions);
 }
 
-export function canManageStudentActivityApproval(role) {
-  return hasPermission(role, PERMISSIONS.APPROVAL_MANAGE_STUDENT_ACTIVITY);
+export function canSubmitCourseSchedule(role, roleDefinitions = {}, profile = null) {
+  if (profile) return hasEffectivePermission(profile, PERMISSIONS.SCHEDULING_SUBMIT, roleDefinitions);
+  return hasPermission(role, PERMISSIONS.SCHEDULING_SUBMIT, roleDefinitions);
 }
 
-export function canManageRoomMaintenance(role) {
-  return hasPermission(role, PERMISSIONS.ROOMS_MAINTENANCE_MANAGE);
+export function canEndorseActivity(role, roleDefinitions = {}, profile = null) {
+  if (profile) return hasEffectivePermission(profile, PERMISSIONS.APPROVAL_ENDORSE_ACTIVITY, roleDefinitions);
+  return hasPermission(role, PERMISSIONS.APPROVAL_ENDORSE_ACTIVITY, roleDefinitions);
 }
 
-export function canManageAssignedRooms(role) {
-  return hasPermission(role, PERMISSIONS.ROOMS_MANAGE_ASSIGNED);
+export function canManageRoomActivityApproval(role, roleDefinitions = {}, profile = null) {
+  if (profile) return hasEffectivePermission(profile, PERMISSIONS.APPROVAL_MANAGE_ROOM_ACTIVITY, roleDefinitions);
+  return hasPermission(role, PERMISSIONS.APPROVAL_MANAGE_ROOM_ACTIVITY, roleDefinitions);
 }
 
-export function canManageBuildings(role) {
-  return hasPermission(role, PERMISSIONS.BUILDINGS_MANAGE);
+export function canManageStudentActivityApproval(role, roleDefinitions = {}, profile = null) {
+  if (profile) return hasEffectivePermission(profile, PERMISSIONS.APPROVAL_MANAGE_STUDENT_ACTIVITY, roleDefinitions);
+  return hasPermission(role, PERMISSIONS.APPROVAL_MANAGE_STUDENT_ACTIVITY, roleDefinitions);
 }
 
-export function canManageApprovalWorkflow(role) {
-  return hasPermission(role, PERMISSIONS.APPROVAL_WORKFLOW_MANAGE);
+export function canManageRoomMaintenance(role, roleDefinitions = {}, profile = null) {
+  if (profile) return hasEffectivePermission(profile, PERMISSIONS.ROOMS_MAINTENANCE_MANAGE, roleDefinitions);
+  return hasPermission(role, PERMISSIONS.ROOMS_MAINTENANCE_MANAGE, roleDefinitions);
 }
 
-export function canManageCalendar(role) {
-  return hasPermission(role, PERMISSIONS.CALENDAR_MANAGE);
+export function canManageAssignedRooms(role, roleDefinitions = {}, profile = null) {
+  if (profile) return hasEffectivePermission(profile, PERMISSIONS.ROOMS_MANAGE_ASSIGNED, roleDefinitions);
+  return hasPermission(role, PERMISSIONS.ROOMS_MANAGE_ASSIGNED, roleDefinitions);
+}
+
+export function canManageBuildings(role, roleDefinitions = {}, profile = null) {
+  if (profile) return hasEffectivePermission(profile, PERMISSIONS.BUILDINGS_MANAGE, roleDefinitions);
+  return hasPermission(role, PERMISSIONS.BUILDINGS_MANAGE, roleDefinitions);
+}
+
+export function canManageApprovalWorkflow(role, roleDefinitions = {}, profile = null) {
+  if (profile) return hasEffectivePermission(profile, PERMISSIONS.APPROVAL_WORKFLOW_MANAGE, roleDefinitions);
+  return hasPermission(role, PERMISSIONS.APPROVAL_WORKFLOW_MANAGE, roleDefinitions);
+}
+
+export function canManageCalendar(role, roleDefinitions = {}, profile = null) {
+  if (profile) return hasEffectivePermission(profile, PERMISSIONS.CALENDAR_MANAGE, roleDefinitions);
+  return hasPermission(role, PERMISSIONS.CALENDAR_MANAGE, roleDefinitions);
 }
 
 export function canManageAllRooms(role) {
@@ -199,11 +274,11 @@ export function canManageAllRooms(role) {
 }
 
 /** Dean/GSD scoped room access via profile.assignedRoomIds / assignedBuildingIds */
-export function canEditRoom(profile, room) {
+export function canEditRoom(profile, room, roleDefinitions = {}) {
   if (!profile || !room) return false;
   if (canManageAllRooms(profile.role)) return true;
-  if (canManageRoomMaintenance(profile.role)) return true;
-  if (canManageAssignedRooms(profile.role)) {
+  if (canManageRoomMaintenance(profile.role, roleDefinitions, profile)) return true;
+  if (canManageAssignedRooms(profile.role, roleDefinitions, profile)) {
     const roomId = room.docId || room.id || room.roomCode;
     const assignedRooms = profile.assignedRoomIds || [];
     const assignedBuildings = profile.assignedBuildingIds || [];
@@ -250,10 +325,10 @@ export function filterRequestsForRole(requests, role, profile) {
   return requests;
 }
 
-export function canCreateRequestType(role, requestType) {
+export function canCreateRequestType(role, requestType, roleDefinitions = {}, profile = null) {
   if (role === ROLES.REGISTRAR) return true;
   if (requestType === 'academic') {
-    return canSubmitCourseSchedule(role) || canEndorseActivity(role);
+    return canSubmitCourseSchedule(role, roleDefinitions, profile) || canEndorseActivity(role, roleDefinitions, profile);
   }
-  return canSubmitReservation(role);
+  return canSubmitReservation(role, roleDefinitions, profile);
 }
