@@ -1,9 +1,12 @@
 import React, { useMemo, useState } from 'react';
 import { X } from 'lucide-react';
 import { useApp, defaultNonAcademicSteps } from '../../context/AppContext';
+import { useModal } from '../../hooks/useModal';
+import { ModalRenderer } from './ModalProvider';
 
 export default function NonAcademicRequestModal({ onClose }) {
   const { addRequest, buildingList } = useApp();
+  const { showConfirm, showNotification, confirmState, notificationState } = useModal();
   const [form, setForm] = useState({
     nameOfOrg: '', activity: '', dateOfActivity: '', timeStart: '', timeEnd: '',
     participants: '', building: '', room: '', designatedVenue: '', objectives: '', specialRequirements: '',
@@ -24,15 +27,60 @@ export default function NonAcademicRequestModal({ onClose }) {
     );
   }, [selectedBuilding]);
 
-  const handleSubmit = (draft = false) => {
-    addRequest({
-      type: 'non-academic',
-      title: form.activity,
-      department: form.nameOfOrg,
-      requestor: form.nameOfOrg,
-      ...form, status: draft ? 'Draft' : 'Pending',
+  const handleSubmit = async (draft = false) => {
+    const isDraft = draft === true;
+    
+    // Validate required fields for submission
+    if (!isDraft && (!form.nameOfOrg.trim() || !form.activity.trim())) {
+      showNotification({
+        type: 'warning',
+        title: 'Missing information',
+        message: 'Please provide organization name and activity name.',
+        autoCloseMs: 3000,
+      });
+      return;
+    }
+
+    const confirmed = await showConfirm({
+      title: isDraft ? 'Save as draft?' : 'Submit request?',
+      message: isDraft 
+        ? 'The request will be saved as a draft and can be submitted later.'
+        : 'This will submit the non-academic request for approval.',
+      confirmText: isDraft ? 'Save Draft' : 'Submit',
+      cancelText: 'Cancel',
+      variant: 'primary',
     });
-    onClose();
+
+    if (!confirmed) return;
+
+    try {
+      addRequest({
+        type: 'non-academic',
+        title: form.activity,
+        department: form.nameOfOrg,
+        requestor: form.nameOfOrg,
+        ...form, 
+        status: isDraft ? 'Draft' : 'Pending',
+      });
+      
+      showNotification({
+        type: 'success',
+        title: isDraft ? 'Draft saved' : 'Request submitted',
+        message: isDraft 
+          ? 'Your non-academic request has been saved as a draft.'
+          : 'Your non-academic request has been submitted for approval.',
+        autoCloseMs: 2000,
+      });
+      
+      onClose();
+    } catch (error) {
+      showNotification({
+        type: 'error',
+        title: isDraft ? 'Save failed' : 'Submit failed',
+        message: error.message || 'An error occurred. Please try again.',
+        autoCloseMs: 0,
+      });
+    }
   };
 
   return (
@@ -180,6 +228,8 @@ export default function NonAcademicRequestModal({ onClose }) {
           <button onClick={() => handleSubmit(false)} className="btn-maroon flex-1 justify-center">Submit Request</button>
         </div>
       </div>
+      
+      <ModalRenderer confirmState={confirmState} notificationState={notificationState} />
     </div>
   );
 }

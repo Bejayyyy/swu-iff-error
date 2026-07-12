@@ -8,8 +8,10 @@ import UserActionsModal from '../components/modals/UserActionsModal';
 import EditUserModal from '../components/modals/EditUserModal';
 import RoleAccessModal from '../components/modals/RoleAccessModal';
 import AddRoleModal from '../components/modals/AddRoleModal';
+import { ModalRenderer } from '../components/modals/ModalProvider';
 import { useAuth } from '../context/AuthContext';
 import { useRoleConfig } from '../context/RoleConfigContext';
+import { useModal } from '../hooks/useModal';
 import {
   createStaffUserByEmailInvite,
   subscribeStaffUsers,
@@ -32,6 +34,7 @@ const roleStyle = (role) => {
 export default function SystemAdministration() {
   const { profile } = useAuth();
   const { roleDefinitionsList, roleDefinitions, loading: rolesLoading, error: rolesError } = useRoleConfig();
+  const { showConfirm, showNotification, confirmState, notificationState } = useModal();
 
   const [tab, setTab] = useState('users');
   const [users, setUsers] = useState([]);
@@ -71,32 +74,88 @@ export default function SystemAdministration() {
   }, [roleValues, roleDefinitions]);
 
   const addUser = async (form) => {
-    await createStaffUserByEmailInvite(
-      {
-        name: form.name,
-        email: form.email,
-        department: form.department,
-        roleValue: form.role,
-        permissions: form.permissions,
-        navKeys: form.navKeys,
-      },
-      profile?.uid,
-    );
+    try {
+      await createStaffUserByEmailInvite(
+        {
+          name: form.name,
+          email: form.email,
+          department: form.department,
+          roleValue: form.role,
+          permissions: form.permissions,
+          navKeys: form.navKeys,
+        },
+        profile?.uid,
+      );
+      showNotification({
+        type: 'success',
+        title: 'User added',
+        message: `${form.name} has been added successfully.`,
+      });
+    } catch (error) {
+      showNotification({
+        type: 'error',
+        title: 'Failed to add user',
+        message: error.message || 'An error occurred while adding the user.',
+      });
+      throw error;
+    }
   };
 
   const saveUserEdits = async (payload) => {
+    const confirmed = await showConfirm({
+      title: 'Save changes?',
+      message: `Update user information for ${payload.name}?`,
+      confirmText: 'Save changes',
+      variant: 'primary',
+    });
+
+    if (!confirmed) return;
+
     setSavingUser(true);
     try {
       await updateStaffUser(payload);
+      showNotification({
+        type: 'success',
+        title: 'User updated',
+        message: 'User information has been updated successfully.',
+      });
+      setEditUser(null);
+    } catch (error) {
+      showNotification({
+        type: 'error',
+        title: 'Update failed',
+        message: error.message || 'Failed to update user information.',
+      });
     } finally {
       setSavingUser(false);
     }
   };
 
   const saveRoleAccess = async (payload) => {
+    const confirmed = await showConfirm({
+      title: 'Update role access?',
+      message: `This will affect all users with the "${payload.label}" role who don't have custom access.`,
+      confirmText: 'Update role',
+      variant: 'primary',
+    });
+
+    if (!confirmed) return;
+
     setSavingRole(true);
     try {
       await saveRoleDefinition(payload);
+      showNotification({
+        type: 'success',
+        title: 'Role updated',
+        message: `"${payload.label}" role access has been updated.`,
+      });
+      setEditRole(null);
+    } catch (error) {
+      showNotification({
+        type: 'error',
+        title: 'Update failed',
+        message: error.message || 'Failed to update role access.',
+      });
     } finally {
       setSavingRole(false);
     }
@@ -106,23 +165,65 @@ export default function SystemAdministration() {
     setSavingRole(true);
     try {
       await saveRoleDefinition(payload);
+      showNotification({
+        type: 'success',
+        title: 'Role created',
+        message: `"${payload.label}" role has been created successfully.`,
+      });
+      setShowAddRole(false);
+    } catch (error) {
+      showNotification({
+        type: 'error',
+        title: 'Creation failed',
+        message: error.message || 'Failed to create role.',
+      });
     } finally {
       setSavingRole(false);
     }
   };
 
   const removeRole = async (role) => {
-    if (role.isSystem) return;
-    const inUse = users.some((u) => u.roleValue === role.id);
-    if (inUse) {
-      window.alert('Cannot delete a role that is assigned to users. Reassign those users first.');
+    if (role.isSystem) {
+      showNotification({
+        type: 'warning',
+        title: 'Cannot delete',
+        message: 'Built-in roles cannot be deleted.',
+      });
       return;
     }
-    if (!window.confirm(`Delete role "${role.label}"?`)) return;
+
+    const inUse = users.some((u) => u.roleValue === role.id);
+    if (inUse) {
+      showNotification({
+        type: 'warning',
+        title: 'Role in use',
+        message: 'Cannot delete a role that is assigned to users. Reassign those users first.',
+      });
+      return;
+    }
+
+    const confirmed = await showConfirm({
+      title: 'Delete role?',
+      message: `Are you sure you want to delete "${role.label}"? This action cannot be undone.`,
+      confirmText: 'Delete role',
+      variant: 'danger',
+    });
+
+    if (!confirmed) return;
+
     try {
       await deleteRoleDefinition(role.id);
+      showNotification({
+        type: 'success',
+        title: 'Role deleted',
+        message: `"${role.label}" has been deleted successfully.`,
+      });
     } catch (err) {
-      window.alert(err.message || 'Failed to delete role.');
+      showNotification({
+        type: 'error',
+        title: 'Deletion failed',
+        message: err.message || 'Failed to delete role.',
+      });
     }
   };
 
@@ -346,6 +447,8 @@ export default function SystemAdministration() {
           saving={savingRole}
         />
       )}
+
+      <ModalRenderer confirmState={confirmState} notificationState={notificationState} />
     </Layout>
   );
 }

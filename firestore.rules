@@ -6,14 +6,25 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // Helper to safely check if user doc exists
+    function userDocExists() {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
     function userDoc() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid));
     }
 
-    function hasRole(role) {
+    // Safer version that checks existence first
+    function hasRoleSafe(role) {
       return isSignedIn()
+        && userDocExists()
         && userDoc().data.role == role
         && userDoc().data.status == 'active';
+    }
+
+    function hasRole(role) {
+      return hasRoleSafe(role);
     }
 
     function isDeveloper() {
@@ -37,17 +48,15 @@ service cloud.firestore {
     }
 
     function isMainRole() {
-      return hasRole('registrar')
-        || hasRole('dean')
-        || hasRole('organization_head')
-        || hasRole('teacher')
-        || hasRole('gsd')
-        || hasRole('student_life')
-        || (
-          isSignedIn()
-          && userDoc().data.status == 'active'
-          && roleDefinitionExists(userDoc().data.role)
-        );
+      return isSignedIn() && userDocExists() && (
+        userDoc().data.role == 'registrar'
+        || userDoc().data.role == 'dean'
+        || userDoc().data.role == 'organization_head'
+        || userDoc().data.role == 'teacher'
+        || userDoc().data.role == 'gsd'
+        || userDoc().data.role == 'student_life'
+        || roleDefinitionExists(userDoc().data.role)
+      ) && userDoc().data.status == 'active';
     }
 
     function isPhinmaedEmail() {
@@ -69,13 +78,15 @@ service cloud.firestore {
         && request.resource.data.email == request.auth.token.email;
     }
 
-    // Users: Developers manage registrar profiles; users read own doc; Registrars read own.
+    // Users collection - Most permissive rule first to allow self-read
     match /users/{userId} {
+      // Allow users to read their own document without role check (avoids circular dependency)
+      allow read: if isSignedIn() && isPhinmaedEmail() && callerIsSelf(userId);
+      
+      // Allow reading by email match or if user has proper role
       allow read: if isSignedIn() && isPhinmaedEmail() && (
-        callerIsSelf(userId)
-        || resource.data.email == request.auth.token.email
-        || isDeveloper()
-        || isMainRole()
+        resource.data.email == request.auth.token.email
+        || (userDocExists() && (isDeveloper() || isMainRole()))
       );
 
       allow create: if isProvisionalDeveloperSignup(userId)
@@ -115,6 +126,7 @@ service cloud.firestore {
         && request.resource.data.email.matches('.*@phinmaed\\.com$')
         && request.resource.data.status in ['active', 'inactive'];
 
+      // Allow updating own lastLoginAt without role check
       allow update: if isSignedIn()
         && isPhinmaedEmail()
         && callerIsSelf(userId)

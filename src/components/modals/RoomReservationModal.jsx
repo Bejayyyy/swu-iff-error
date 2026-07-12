@@ -4,6 +4,8 @@ import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
 import { APPROVAL_TYPES } from '../../constants/approvalWorkflow';
 import { fetchWorkflowLevels } from '../../services/approvalWorkflowService';
+import { useModal } from '../../hooks/useModal';
+import { ModalRenderer } from './ModalProvider';
 import ApprovalTimeline from '../reservations/ApprovalTimeline';
 
 const emptyForm = {
@@ -23,6 +25,7 @@ const emptyForm = {
 export default function RoomReservationModal({ onClose, eventType, prefill = {} }) {
   const { addRequest, buildingList } = useApp();
   const { profile } = useAuth();
+  const { showConfirm, showNotification, confirmState, notificationState } = useModal();
   const [form, setForm] = useState({
     ...emptyForm,
     requestedBy: profile?.displayName || '',
@@ -74,15 +77,43 @@ export default function RoomReservationModal({ onClose, eventType, prefill = {} 
   const isPrefilledRoom = Boolean(prefill.room && prefill.buildingId);
 
   const submit = async (draft = false) => {
+    const isDraft = draft === true;
+    
     setError('');
+    
     if (!form.nameOfOrg.trim() || !form.activity.trim() || !form.dateOfActivity) {
       setError('Organization, activity name, and date are required.');
+      showNotification({
+        type: 'warning',
+        title: 'Missing information',
+        message: 'Please provide organization, activity name, and date.',
+        autoCloseMs: 3000,
+      });
       return;
     }
-    if (!draft && !workflowPreview.length) {
+    
+    if (!isDraft && !workflowPreview.length) {
       setError('No approval workflow configured. Contact the Registrar.');
+      showNotification({
+        type: 'error',
+        title: 'No workflow configured',
+        message: 'Contact the Registrar to configure the approval workflow.',
+        autoCloseMs: 0,
+      });
       return;
     }
+
+    const confirmed = await showConfirm({
+      title: isDraft ? 'Save as draft?' : 'Submit reservation?',
+      message: isDraft 
+        ? 'The reservation will be saved as a draft and can be submitted later.'
+        : 'This will submit the room reservation request for approval.',
+      confirmText: isDraft ? 'Save Draft' : 'Submit',
+      cancelText: 'Cancel',
+      variant: 'primary',
+    });
+
+    if (!confirmed) return;
 
     setBusy(true);
     try {
@@ -97,11 +128,28 @@ export default function RoomReservationModal({ onClose, eventType, prefill = {} 
           requestorEmail: profile?.email,
           createdByUid: profile?.uid,
         },
-        { draft },
+        { draft: isDraft },
       );
+      
+      showNotification({
+        type: 'success',
+        title: isDraft ? 'Draft saved' : 'Reservation submitted',
+        message: isDraft 
+          ? 'Your room reservation has been saved as a draft.'
+          : 'Your room reservation has been submitted for approval.',
+        autoCloseMs: 2000,
+      });
+      
       onClose();
     } catch (err) {
-      setError(err.message || 'Failed to submit reservation.');
+      const errorMessage = err.message || 'Failed to submit reservation.';
+      setError(errorMessage);
+      showNotification({
+        type: 'error',
+        title: isDraft ? 'Save failed' : 'Submit failed',
+        message: errorMessage,
+        autoCloseMs: 0,
+      });
     } finally {
       setBusy(false);
     }
@@ -244,10 +292,16 @@ export default function RoomReservationModal({ onClose, eventType, prefill = {} 
         </div>
 
         <div className="px-8 py-4 border-t border-gray-100 flex gap-3 flex-shrink-0">
-          <button type="button" onClick={() => submit(true)} disabled={busy} className="btn-outline-maroon flex-1">Save as Draft</button>
-          <button type="button" onClick={() => submit(false)} disabled={busy} className="btn-maroon flex-1 justify-center">Submit Request</button>
+          <button type="button" onClick={() => submit(true)} disabled={busy} className="btn-outline-maroon flex-1">
+            {busy ? 'Saving...' : 'Save as Draft'}
+          </button>
+          <button type="button" onClick={() => submit(false)} disabled={busy} className="btn-maroon flex-1 justify-center">
+            {busy ? 'Submitting...' : 'Submit Request'}
+          </button>
         </div>
       </div>
+      
+      <ModalRenderer confirmState={confirmState} notificationState={notificationState} />
     </div>
   );
 }

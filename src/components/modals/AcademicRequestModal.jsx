@@ -1,6 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import { X } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import { useModal } from '../../hooks/useModal';
+import { ModalRenderer } from './ModalProvider';
 
 const academicTypes = [
   { value: 'room-reservation', label: 'Room Reservation', fields: ['courseCode','courseDesc','instructor','semester','numStudents'] },
@@ -12,6 +14,7 @@ const academicTypes = [
 
 export default function AcademicRequestModal({ onClose }) {
   const { addRequest, buildingList } = useApp();
+  const { showConfirm, showNotification, confirmState, notificationState } = useModal();
   const [form, setForm] = useState({
     reqType: '', courseCode: '', courseDesc: '', instructor: '', semester: '',
     numStudents: '', building: '', floor: '', room: '', dateField: '', timeStart: '', timeEnd: '',
@@ -33,13 +36,58 @@ export default function AcademicRequestModal({ onClose }) {
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
-  const handleSubmit = (draft = false) => {
-    addRequest({
-      type: 'academic',
-      title: `${selectedType?.label || 'Academic Request'}: ${form.courseDesc}`,
-      ...form, status: draft ? 'Draft' : 'Pending',
+  const handleSubmit = async (draft = false) => {
+    const isDraft = draft === true;
+    
+    // Validate required fields for submission
+    if (!isDraft && !form.reqType) {
+      showNotification({
+        type: 'warning',
+        title: 'Missing information',
+        message: 'Please select a request type.',
+        autoCloseMs: 3000,
+      });
+      return;
+    }
+
+    const confirmed = await showConfirm({
+      title: isDraft ? 'Save as draft?' : 'Submit request?',
+      message: isDraft 
+        ? 'The request will be saved as a draft and can be submitted later.'
+        : 'This will submit the academic request for approval.',
+      confirmText: isDraft ? 'Save Draft' : 'Submit',
+      cancelText: 'Cancel',
+      variant: 'primary',
     });
-    onClose();
+
+    if (!confirmed) return;
+
+    try {
+      addRequest({
+        type: 'academic',
+        title: `${selectedType?.label || 'Academic Request'}: ${form.courseDesc}`,
+        ...form, 
+        status: isDraft ? 'Draft' : 'Pending',
+      });
+      
+      showNotification({
+        type: 'success',
+        title: isDraft ? 'Draft saved' : 'Request submitted',
+        message: isDraft 
+          ? 'Your academic request has been saved as a draft.'
+          : 'Your academic request has been submitted for approval.',
+        autoCloseMs: 2000,
+      });
+      
+      onClose();
+    } catch (error) {
+      showNotification({
+        type: 'error',
+        title: isDraft ? 'Save failed' : 'Submit failed',
+        message: error.message || 'An error occurred. Please try again.',
+        autoCloseMs: 0,
+      });
+    }
   };
 
   return (
@@ -206,6 +254,8 @@ export default function AcademicRequestModal({ onClose }) {
           <button onClick={() => handleSubmit(false)} className="btn-maroon flex-1 justify-center">Submit Request</button>
         </div>
       </div>
+      
+      <ModalRenderer confirmState={confirmState} notificationState={notificationState} />
     </div>
   );
 }
