@@ -8,6 +8,7 @@ import {
   setDoc,
   orderBy,
   runTransaction,
+  deleteDoc,
 } from 'firebase/firestore';
 import { db } from '../firebase/firebase';
 import { COLLECTIONS } from '../firebase/constants';
@@ -88,6 +89,7 @@ export async function createRoomReservation(payload, { draft = false } = {}) {
     status: draft ? RESERVATION_STATUS.DRAFT : RESERVATION_STATUS.IN_PROGRESS,
     title: payload.activity?.trim() || payload.title?.trim() || 'Room Reservation',
     department: payload.nameOfOrg?.trim() || payload.department?.trim() || '',
+    college: payload.college?.trim() || '', // Added college field for filtering
     requestor: payload.requestedBy?.trim() || payload.requestor?.trim() || '',
     requestorEmail: payload.requestorEmail || null,
     createdByUid: payload.createdByUid || null,
@@ -238,4 +240,17 @@ export async function updateRoomReservation(reservationId, updates) {
     { ...updates, updatedAt: serverTimestamp() },
     { merge: true },
   );
+}
+
+export async function deleteRoomReservation(reservationId) {
+  if (!reservationId) throw new Error('Reservation ID is required.');
+  
+  const ref = reservationRef(reservationId);
+  const snap = await getDoc(ref);
+  
+  if (!snap.exists()) {
+    throw new Error('Reservation not found.');
+  }
+  
+  await deleteDoc(ref);
 }

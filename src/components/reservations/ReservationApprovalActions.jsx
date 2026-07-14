@@ -3,6 +3,7 @@ import { CheckCircle, XCircle } from 'lucide-react';
 import { RESERVATION_STATUS, isReservationActionable } from '../../constants/approvalWorkflow';
 import { useModal } from '../../hooks/useModal';
 import { ModalRenderer } from '../modals/ModalProvider';
+import LoadingModal from '../modals/LoadingModal';
 
 export default function ReservationApprovalActions({
   reservation,
@@ -14,6 +15,8 @@ export default function ReservationApprovalActions({
   const [showReject, setShowReject] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState('Processing...');
   const { showConfirm, showNotification, confirmState, notificationState } = useModal();
 
   const canAct = isReservationActionable(reservation, profile?.role, profile);
@@ -32,6 +35,8 @@ export default function ReservationApprovalActions({
 
     if (!confirmed) return;
 
+    setIsLoading(true);
+    setLoadingMessage('Approving reservation...');
     setBusy(true);
     setError('');
     try {
@@ -54,6 +59,7 @@ export default function ReservationApprovalActions({
       });
     } finally {
       setBusy(false);
+      setIsLoading(false);
     }
   };
 
@@ -83,6 +89,8 @@ export default function ReservationApprovalActions({
 
     if (!confirmed) return;
 
+    setIsLoading(true);
+    setLoadingMessage('Rejecting reservation...');
     setBusy(true);
     setError('');
     try {
@@ -106,6 +114,7 @@ export default function ReservationApprovalActions({
       });
     } finally {
       setBusy(false);
+      setIsLoading(false);
     }
   };
 
@@ -144,6 +153,7 @@ export default function ReservationApprovalActions({
         </button>
       </div>
       
+      <LoadingModal isOpen={isLoading} message={loadingMessage} />
       <ModalRenderer confirmState={confirmState} notificationState={notificationState} />
     </>
   );

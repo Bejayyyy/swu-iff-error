@@ -3,6 +3,7 @@ import { X } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { useModal } from '../../hooks/useModal';
 import { ModalRenderer } from './ModalProvider';
+import LoadingModal from './LoadingModal';
 
 const academicTypes = [
   { value: 'room-reservation', label: 'Room Reservation', fields: ['courseCode','courseDesc','instructor','semester','numStudents'] },
@@ -15,6 +16,8 @@ const academicTypes = [
 export default function AcademicRequestModal({ onClose }) {
   const { addRequest, buildingList } = useApp();
   const { showConfirm, showNotification, confirmState, notificationState } = useModal();
+  const [isLoading, setIsLoading] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState('Processing...');
   const [form, setForm] = useState({
     reqType: '', courseCode: '', courseDesc: '', instructor: '', semester: '',
     numStudents: '', building: '', floor: '', room: '', dateField: '', timeStart: '', timeEnd: '',
@@ -62,8 +65,11 @@ export default function AcademicRequestModal({ onClose }) {
 
     if (!confirmed) return;
 
+    setIsLoading(true);
+    setLoadingMessage(isDraft ? 'Saving draft...' : 'Submitting request...');
+
     try {
-      addRequest({
+      await addRequest({
         type: 'academic',
         title: `${selectedType?.label || 'Academic Request'}: ${form.courseDesc}`,
         ...form, 
@@ -87,6 +93,8 @@ export default function AcademicRequestModal({ onClose }) {
         message: error.message || 'An error occurred. Please try again.',
         autoCloseMs: 0,
       });
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -255,6 +263,7 @@ export default function AcademicRequestModal({ onClose }) {
         </div>
       </div>
       
+      <LoadingModal isOpen={isLoading} message={loadingMessage} />
       <ModalRenderer confirmState={confirmState} notificationState={notificationState} />
     </div>
   );

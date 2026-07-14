@@ -83,11 +83,16 @@ service cloud.firestore {
       // Allow users to read their own document without role check (avoids circular dependency)
       allow read: if isSignedIn() && isPhinmaedEmail() && callerIsSelf(userId);
       
-      // Allow reading by email match or if user has proper role
-      allow read: if isSignedIn() && isPhinmaedEmail() && (
-        resource.data.email == request.auth.token.email
-        || (userDocExists() && (isDeveloper() || isMainRole()))
-      );
+      // Allow reading invite documents by email match (for account migration)
+      // This allows reading documents like "invite_email@phinmaed.com" when the user's email matches
+      allow read: if isSignedIn() && isPhinmaedEmail() && resource.data.email == request.auth.token.email;
+      
+      // Allow reading if user has proper role
+      allow read: if isSignedIn() && isPhinmaedEmail() && userDocExists() && (isDeveloper() || isMainRole());
+
+      // Allow creating own account during migration or provisional developer signup
+      allow create: if isSignedIn() && isPhinmaedEmail() && callerIsSelf(userId)
+        && request.resource.data.email == request.auth.token.email;
 
       allow create: if isProvisionalDeveloperSignup(userId)
         || (
@@ -104,6 +109,12 @@ service cloud.firestore {
           && request.resource.data.email.matches('.*@phinmaed\\.com$')
           && request.resource.data.status in ['active', 'inactive']
         );
+
+      // Allow updating invite document to mark as migrated
+      allow update: if isSignedIn()
+        && isPhinmaedEmail()
+        && resource.data.email == request.auth.token.email
+        && request.resource.data.keys().hasAny(['migratedToUid', 'status']);
 
       allow update: if isDeveloper()
         && isPhinmaedEmail()
@@ -132,7 +143,9 @@ service cloud.firestore {
         && callerIsSelf(userId)
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastLoginAt', 'updatedAt']);
 
-      allow delete: if isDeveloper() && isPhinmaedEmail() && resource.data.role == 'registrar';
+      allow delete: if (isDeveloper() || isRegistrar()) 
+        && isPhinmaedEmail() 
+        && (resource.data.role == 'registrar' || isStaffRoleOrDefined(resource.data.role));
     }
 
     match /registrar_management/{registrarId} {
@@ -251,6 +264,10 @@ service cloud.firestore {
       allow create: if isMainRole() && isPhinmaedEmail()
         && request.resource.data.createdByUid == request.auth.uid;
       allow update: if isMainRole() && isPhinmaedEmail();
+      allow delete: if isPhinmaedEmail() && (
+        isRegistrar()
+        || (isMainRole() && resource.data.createdByUid == request.auth.uid)
+      );
     }
 
     // Registrar operational data (scheduling, etc.) — not writable by Developers.

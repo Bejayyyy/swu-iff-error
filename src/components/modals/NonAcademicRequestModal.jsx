@@ -3,10 +3,13 @@ import { X } from 'lucide-react';
 import { useApp, defaultNonAcademicSteps } from '../../context/AppContext';
 import { useModal } from '../../hooks/useModal';
 import { ModalRenderer } from './ModalProvider';
+import LoadingModal from './LoadingModal';
 
 export default function NonAcademicRequestModal({ onClose }) {
   const { addRequest, buildingList } = useApp();
   const { showConfirm, showNotification, confirmState, notificationState } = useModal();
+  const [isLoading, setIsLoading] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState('Processing...');
   const [form, setForm] = useState({
     nameOfOrg: '', activity: '', dateOfActivity: '', timeStart: '', timeEnd: '',
     participants: '', building: '', room: '', designatedVenue: '', objectives: '', specialRequirements: '',
@@ -53,8 +56,11 @@ export default function NonAcademicRequestModal({ onClose }) {
 
     if (!confirmed) return;
 
+    setIsLoading(true);
+    setLoadingMessage(isDraft ? 'Saving draft...' : 'Submitting request...');
+
     try {
-      addRequest({
+      await addRequest({
         type: 'non-academic',
         title: form.activity,
         department: form.nameOfOrg,
@@ -80,6 +86,8 @@ export default function NonAcademicRequestModal({ onClose }) {
         message: error.message || 'An error occurred. Please try again.',
         autoCloseMs: 0,
       });
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -229,6 +237,7 @@ export default function NonAcademicRequestModal({ onClose }) {
         </div>
       </div>
       
+      <LoadingModal isOpen={isLoading} message={loadingMessage} />
       <ModalRenderer confirmState={confirmState} notificationState={notificationState} />
     </div>
   );

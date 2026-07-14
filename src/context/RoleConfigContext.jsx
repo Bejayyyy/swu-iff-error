@@ -4,16 +4,29 @@ import {
   seedDefaultRoleDefinitions,
   subscribeRoleDefinitions,
 } from '../services/roleDefinitionService';
+import { useAuth } from './AuthContext';
 
 const RoleConfigContext = createContext(null);
 
 export function RoleConfigProvider({ children }) {
+  const { firebaseUser, profile, loading: authLoading } = useAuth();
   const [roleDefinitionsList, setRoleDefinitionsList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const seedAttemptedRef = useRef(false);
 
+  // Wait for both auth and profile to be ready
+  const isReady = !authLoading && firebaseUser && profile;
+
   useEffect(() => {
+    // Don't fetch role definitions until user profile is loaded
+    if (!isReady) {
+      setLoading(authLoading); // Show loading only if auth is loading
+      return undefined;
+    }
+
+    setError('');
+    
     const unsub = subscribeRoleDefinitions(
       async (list) => {
         if (!list.length && !seedAttemptedRef.current) {
@@ -22,6 +35,7 @@ export function RoleConfigProvider({ children }) {
             await seedDefaultRoleDefinitions();
             return;
           } catch (err) {
+            console.error('Role definitions seed error:', err);
             setError(err.message || 'Failed to initialize role definitions.');
             setLoading(false);
           }
@@ -31,12 +45,13 @@ export function RoleConfigProvider({ children }) {
         setError('');
       },
       (err) => {
+        console.error('Role definitions subscription error:', err);
         setError(err.message || 'Failed to load role definitions.');
         setLoading(false);
       },
     );
     return unsub;
-  }, []);
+  }, [isReady, authLoading, firebaseUser, profile]);
 
   const roleDefinitions = useMemo(
     () => roleDefinitionsToMap(roleDefinitionsList),

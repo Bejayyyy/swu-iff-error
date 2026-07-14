@@ -1,9 +1,9 @@
 import React from 'react';
-import { X, Mail, Shield, Pencil } from 'lucide-react';
+import { X, Mail, Shield, Pencil, Trash2 } from 'lucide-react';
 
 const R = 10;
 
-export default function UserActionsModal({ user, onClose, onEdit }) {
+export default function UserActionsModal({ user, onClose, onEdit, onDelete }) {
   if (!user) return null;
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -35,6 +35,15 @@ export default function UserActionsModal({ user, onClose, onEdit }) {
             onClick={() => { onEdit?.(user); onClose(); }}
           >
             <Pencil size={14} /> Edit user & access
+          </button>
+
+          <button
+            type="button"
+            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg font-bold text-sm border-2 transition-all bg-white hover:bg-red-50"
+            style={{ borderColor: '#DC2626', color: '#DC2626', borderRadius: R }}
+            onClick={() => { onDelete?.(user); onClose(); }}
+          >
+            <Trash2 size={14} /> Delete user
           </button>
         </div>
       </div>

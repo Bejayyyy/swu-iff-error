@@ -167,7 +167,7 @@ const sampleUsers = [
 ];
 
 export function AppProvider({ children }) {
-  const { firebaseUser, loading: authLoading } = useAuth();
+  const { firebaseUser, profile, loading: authLoading } = useAuth();
   const [buildingList, setBuildingList] = useState([]);
   const [buildingsLoading, setBuildingsLoading] = useState(true);
   const [buildingsError, setBuildingsError] = useState(null);
@@ -178,10 +178,19 @@ export function AppProvider({ children }) {
   const [expandedBuildings, setExpandedBuildings] = useState({});
   const [expandedFloors, setExpandedFloors] = useState({});
 
+  // Wait for both auth and profile to be ready before fetching data
+  const isReady = !authLoading && firebaseUser && profile;
+
   useEffect(() => {
-    if (authLoading) return undefined;
+    // Don't fetch buildings until user profile is loaded
+    if (!isReady) {
+      setBuildingsLoading(authLoading); // Show loading only if auth is loading
+      return undefined;
+    }
 
     setBuildingsLoading(true);
+    setBuildingsError(null);
+    
     const unsub = subscribeToBuildings(
       (list) => {
         setBuildingList(list);
@@ -189,21 +198,24 @@ export function AppProvider({ children }) {
         setBuildingsError(null);
       },
       (err) => {
+        console.error('Buildings subscription error:', err);
         setBuildingsError(err.message || 'Failed to load buildings.');
         setBuildingsLoading(false);
       },
     );
     return unsub;
-  }, [authLoading, firebaseUser]);
+  }, [isReady, authLoading, firebaseUser, profile]);
 
   useEffect(() => {
-    if (authLoading || !firebaseUser) {
-      setRequests([]);
-      setRequestsLoading(!authLoading && !firebaseUser ? false : authLoading);
+    // Don't fetch reservations until user profile is loaded
+    if (!isReady) {
+      setRequestsLoading(authLoading); // Show loading only if auth is loading
       return undefined;
     }
 
     setRequestsLoading(true);
+    setRequestsError(null);
+    
     const unsub = subscribeRoomReservations(
       (list) => {
         setRequests(list);
@@ -211,12 +223,13 @@ export function AppProvider({ children }) {
         setRequestsError(null);
       },
       (err) => {
+        console.error('Reservations subscription error:', err);
         setRequestsError(err.message || 'Failed to load reservations.');
         setRequestsLoading(false);
       },
     );
     return unsub;
-  }, [authLoading, firebaseUser]);
+  }, [isReady, authLoading, firebaseUser, profile]);
 
   const addBuilding = async (b) => {
     await createBuilding({

@@ -7,6 +7,8 @@ import {
   updateDoc,
   where,
   doc,
+  getDoc,
+  deleteDoc,
 } from 'firebase/firestore';
 import { db } from '../firebase/firebase';
 import { COLLECTIONS, ROLES, USER_STATUS } from '../firebase/constants';
@@ -38,6 +40,7 @@ function mapStaffUserDoc(u, roleDefinitions = {}) {
     role: roleLabelFromValue(u.role, roleDefinitions),
     roleValue: u.role,
     department: u.department || '',
+    college: u.college || '', // Added college field
     status: u.status === USER_STATUS.ACTIVE ? 'Active' : 'Inactive',
     initials: u.initials || getInitials(u.displayName, u.email),
     permissions: u.permissions || [],
@@ -124,6 +127,7 @@ export async function createStaffUserByEmailInvite({
   name,
   email,
   department,
+  college,
   roleValue,
   permissions = [],
   navKeys = [],
@@ -133,12 +137,18 @@ export async function createStaffUserByEmailInvite({
 
   const normalized = normalizeEmail(email);
   const docId = `invite_${normalized}`;
+  
+  // GSD and Student Life don't have departments or colleges
+  const shouldIncludeDepartment = roleValue !== 'gsd' && roleValue !== 'student_life';
+  const shouldIncludeCollege = roleValue === 'teacher' || roleValue === 'organization_head' || roleValue === 'dean';
+  
   const payload = {
     email: normalized,
     displayName: name.trim(),
     role: roleValue,
     status: USER_STATUS.ACTIVE,
-    department: department?.trim() || '',
+    department: shouldIncludeDepartment ? (department?.trim() || '') : '',
+    college: shouldIncludeCollege ? (college?.trim() || '') : '',
     initials: getInitials(name, normalized),
     authProviders: ['google'],
     mustSetPassword: true,
@@ -159,7 +169,9 @@ export async function createStaffUserByEmailInvite({
 export async function updateStaffUser({
   uid,
   name,
+  email,
   department,
+  college,
   roleValue,
   status,
   permissions = [],
@@ -167,16 +179,25 @@ export async function updateStaffUser({
 }) {
   if (!uid) throw new Error('User id is required.');
 
+  // GSD and Student Life don't have departments or colleges
+  const shouldIncludeDepartment = roleValue !== 'gsd' && roleValue !== 'student_life';
+  const shouldIncludeCollege = roleValue === 'teacher' || roleValue === 'organization_head' || roleValue === 'dean';
+
   const patch = {
     displayName: name?.trim() || '',
-    department: department?.trim() || '',
+    email: email?.trim() ? normalizeEmail(email) : undefined, // Update email if provided
+    department: shouldIncludeDepartment ? (department?.trim() || '') : '',
+    college: shouldIncludeCollege ? (college?.trim() || '') : '',
     role: roleValue,
     status: status || USER_STATUS.ACTIVE,
-    initials: getInitials(name, ''),
+    initials: getInitials(name, email || ''),
     permissions: permissions || [],
     navKeys: navKeys || [],
     updatedAt: serverTimestamp(),
   };
+
+  // Remove undefined values
+  Object.keys(patch).forEach(key => patch[key] === undefined && delete patch[key]);
 
   await updateDoc(doc(db, COLLECTIONS.USERS, uid), patch);
 }
@@ -187,4 +208,31 @@ export function getDefaultAccessForRole(roleValue, roleDefinitions = {}) {
     permissions: def.permissions || [],
     navKeys: def.navKeys || [],
   };
+}
+
+export async function deleteStaffUser(uid) {
+  if (!uid) throw new Error('User id is required.');
+  
+  const userRef = doc(db, COLLECTIONS.USERS, uid);
+  const userSnap = await getDoc(userRef);
+  
+  if (!userSnap.exists()) {
+    throw new Error('User not found.');
+  }
+  
+  const userData = userSnap.data();
+  
+  // Only allow deletion of invited users (not yet logged in)
+  // or set status to 'deleted' for logged-in users
+  if (userData.invited || !userData.lastLoginAt) {
+    // Delete the invite document
+    await deleteDoc(userRef);
+  } else {
+    // Mark as deleted instead of removing (for audit trail)
+    await updateDoc(userRef, {
+      status: 'deleted',
+      deletedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+  }
 }

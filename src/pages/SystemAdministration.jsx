@@ -8,6 +8,7 @@ import UserActionsModal from '../components/modals/UserActionsModal';
 import EditUserModal from '../components/modals/EditUserModal';
 import RoleAccessModal from '../components/modals/RoleAccessModal';
 import AddRoleModal from '../components/modals/AddRoleModal';
+import LoadingModal from '../components/modals/LoadingModal';
 import { ModalRenderer } from '../components/modals/ModalProvider';
 import { useAuth } from '../context/AuthContext';
 import { useRoleConfig } from '../context/RoleConfigContext';
@@ -16,6 +17,7 @@ import {
   createStaffUserByEmailInvite,
   subscribeStaffUsers,
   updateStaffUser,
+  deleteStaffUser,
 } from '../services/systemUserService';
 import {
   deleteRoleDefinition,
@@ -48,6 +50,8 @@ export default function SystemAdministration() {
   const [showAddRole, setShowAddRole] = useState(false);
   const [savingRole, setSavingRole] = useState(false);
   const [savingUser, setSavingUser] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState('Processing...');
 
   const roleValues = useMemo(
     () => roleDefinitionsList.map((r) => r.id),
@@ -74,12 +78,16 @@ export default function SystemAdministration() {
   }, [roleValues, roleDefinitions]);
 
   const addUser = async (form) => {
+    setIsLoading(true);
+    setLoadingMessage('Creating user...');
+    
     try {
       await createStaffUserByEmailInvite(
         {
           name: form.name,
           email: form.email,
           department: form.department,
+          college: form.college,
           roleValue: form.role,
           permissions: form.permissions,
           navKeys: form.navKeys,
@@ -91,6 +99,7 @@ export default function SystemAdministration() {
         title: 'User added',
         message: `${form.name} has been added successfully.`,
       });
+      setShowAdd(false);
     } catch (error) {
       showNotification({
         type: 'error',
@@ -98,6 +107,8 @@ export default function SystemAdministration() {
         message: error.message || 'An error occurred while adding the user.',
       });
       throw error;
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -111,7 +122,10 @@ export default function SystemAdministration() {
 
     if (!confirmed) return;
 
+    setIsLoading(true);
+    setLoadingMessage('Updating user...');
     setSavingUser(true);
+    
     try {
       await updateStaffUser(payload);
       showNotification({
@@ -128,6 +142,7 @@ export default function SystemAdministration() {
       });
     } finally {
       setSavingUser(false);
+      setIsLoading(false);
     }
   };
 
@@ -141,7 +156,10 @@ export default function SystemAdministration() {
 
     if (!confirmed) return;
 
+    setIsLoading(true);
+    setLoadingMessage('Updating role access...');
     setSavingRole(true);
+    
     try {
       await saveRoleDefinition(payload);
       showNotification({
@@ -158,11 +176,15 @@ export default function SystemAdministration() {
       });
     } finally {
       setSavingRole(false);
+      setIsLoading(false);
     }
   };
 
   const createRole = async (payload) => {
+    setIsLoading(true);
+    setLoadingMessage('Creating role...');
     setSavingRole(true);
+    
     try {
       await saveRoleDefinition(payload);
       showNotification({
@@ -179,6 +201,7 @@ export default function SystemAdministration() {
       });
     } finally {
       setSavingRole(false);
+      setIsLoading(false);
     }
   };
 
@@ -211,6 +234,9 @@ export default function SystemAdministration() {
 
     if (!confirmed) return;
 
+    setIsLoading(true);
+    setLoadingMessage('Deleting role...');
+    
     try {
       await deleteRoleDefinition(role.id);
       showNotification({
@@ -224,6 +250,41 @@ export default function SystemAdministration() {
         title: 'Deletion failed',
         message: err.message || 'Failed to delete role.',
       });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const deleteUser = async (user) => {
+    const confirmed = await showConfirm({
+      title: 'Delete user?',
+      message: `Are you sure you want to delete "${user.name}"? This will remove their access to the system.`,
+      confirmText: 'Delete user',
+      cancelText: 'Cancel',
+      variant: 'danger',
+    });
+
+    if (!confirmed) return;
+
+    setIsLoading(true);
+    setLoadingMessage('Deleting user...');
+    
+    try {
+      await deleteStaffUser(user.uid);
+      showNotification({
+        type: 'success',
+        title: 'User deleted',
+        message: `${user.name} has been removed from the system.`,
+      });
+      setActionUser(null);
+    } catch (error) {
+      showNotification({
+        type: 'error',
+        title: 'Delete failed',
+        message: error.message || 'Failed to delete user.',
+      });
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -420,6 +481,7 @@ export default function SystemAdministration() {
           user={actionUser}
           onClose={() => setActionUser(null)}
           onEdit={setEditUser}
+          onDelete={deleteUser}
         />
       )}
       {editUser && (
@@ -448,6 +510,7 @@ export default function SystemAdministration() {
         />
       )}
 
+      <LoadingModal isOpen={isLoading} message={loadingMessage} />
       <ModalRenderer confirmState={confirmState} notificationState={notificationState} />
     </Layout>
   );

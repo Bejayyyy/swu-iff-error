@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { X } from 'lucide-react';
-import { USER_STATUS } from '../../firebase/constants';
+import { USER_STATUS, INSTITUTIONAL_EMAIL_DOMAIN } from '../../firebase/constants';
+import { COLLEGE_OPTIONS, requiresCollege, requiresDepartment } from '../../constants/colleges';
 import PermissionCheckboxGrid from '../admin/PermissionCheckboxGrid';
 import { getRoleDefinition } from '../../constants/rolePermissions';
 
@@ -19,7 +20,9 @@ export default function EditUserModal({
 
   const [form, setForm] = useState({
     name: user?.name || '',
+    email: user?.email || '', // Added email editing
     department: user?.department || '',
+    college: user?.college || '',
     roleValue: user?.roleValue || roleOptions[0]?.value || 'dean',
     status: user?.status === 'Inactive' ? USER_STATUS.INACTIVE : USER_STATUS.ACTIVE,
     useCustomAccess: Boolean(user?.permissions?.length || user?.navKeys?.length),
@@ -27,6 +30,9 @@ export default function EditUserModal({
     navKeys: user?.navKeys || [],
   });
   const [error, setError] = useState('');
+
+  const showCollegeField = requiresCollege(form.roleValue);
+  const showDepartmentField = requiresDepartment(form.roleValue);
 
   useEffect(() => {
     if (form.useCustomAccess) return;
@@ -47,11 +53,25 @@ export default function EditUserModal({
       setError('Name is required.');
       return;
     }
+    if (!form.email.trim()) {
+      setError('Email is required.');
+      return;
+    }
+    if (!form.email.toLowerCase().endsWith(`@${INSTITUTIONAL_EMAIL_DOMAIN}`)) {
+      setError(`Use school email ending in @${INSTITUTIONAL_EMAIL_DOMAIN}.`);
+      return;
+    }
+    if (showCollegeField && !form.college) {
+      setError('College is required for this role.');
+      return;
+    }
     try {
       await onSave({
         uid: user.uid,
         name: form.name.trim(),
+        email: form.email.trim(), // Include email update
         department: form.department.trim(),
+        college: form.college.trim(),
         roleValue: form.roleValue,
         status: form.status,
         permissions: form.useCustomAccess ? form.permissions : [],
@@ -76,7 +96,7 @@ export default function EditUserModal({
         <form onSubmit={submit} className="p-8 pt-10">
           <h2 className="font-black text-lg mb-1" style={{ color: '#7A0808' }}>Edit user access</h2>
           <p className="text-xs font-medium mb-4" style={{ color: '#2B3235', opacity: 0.65 }}>
-            {user?.email}
+            Update user information and access permissions
           </p>
 
           {error && (
@@ -92,20 +112,62 @@ export default function EditUserModal({
                 <input className="form-input" value={form.name} onChange={(e) => set('name', e.target.value)} required />
               </div>
               <div>
-                <label className="form-label">Department / college</label>
-                <input className="form-input" value={form.department} onChange={(e) => set('department', e.target.value)} />
+                <label className="form-label">Email</label>
+                <input 
+                  type="email" 
+                  className="form-input" 
+                  placeholder={`name@${INSTITUTIONAL_EMAIL_DOMAIN}`}
+                  value={form.email} 
+                  onChange={(e) => set('email', e.target.value)} 
+                  required 
+                />
               </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="form-label">Role</label>
-                <select className="form-input" value={form.roleValue} onChange={(e) => set('roleValue', e.target.value)}>
+              {showDepartmentField && (
+                <div>
+                  <label className="form-label">Department</label>
+                  <input className="form-input" value={form.department} onChange={(e) => set('department', e.target.value)} />
+                </div>
+              )}
+              <div className={showDepartmentField ? '' : 'col-span-2'}>
+                <label className="form-label">User role</label>
+                <select 
+                  className="form-input" 
+                  value={form.roleValue} 
+                  onChange={(e) => {
+                    const newRole = e.target.value;
+                    set('roleValue', newRole);
+                    // Clear department and college if switching to GSD or Student Life
+                    if (!requiresDepartment(newRole)) {
+                      set('department', '');
+                    }
+                    if (!requiresCollege(newRole)) {
+                      set('college', '');
+                    }
+                  }}
+                >
                   {roleOptions.map((r) => (
                     <option key={r.value} value={r.value}>{r.label}</option>
                   ))}
                 </select>
               </div>
+            </div>
+
+            {showCollegeField && (
+              <div>
+                <label className="form-label">College <span className="text-red-600">*</span></label>
+                <select className="form-input" value={form.college} onChange={(e) => set('college', e.target.value)} required>
+                  <option value="">Select College</option>
+                  {COLLEGE_OPTIONS.map((college) => (
+                    <option key={college.value} value={college.value}>{college.label}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="form-label">Status</label>
                 <select className="form-input" value={form.status} onChange={(e) => set('status', e.target.value)}>

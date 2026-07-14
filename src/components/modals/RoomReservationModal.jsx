@@ -3,9 +3,11 @@ import { X } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
 import { APPROVAL_TYPES } from '../../constants/approvalWorkflow';
+import { COLLEGE_OPTIONS, requiresCollege } from '../../constants/colleges';
 import { fetchWorkflowLevels } from '../../services/approvalWorkflowService';
 import { useModal } from '../../hooks/useModal';
 import { ModalRenderer } from './ModalProvider';
+import LoadingModal from './LoadingModal';
 import ApprovalTimeline from '../reservations/ApprovalTimeline';
 
 const emptyForm = {
@@ -20,6 +22,7 @@ const emptyForm = {
   requestedBy: '',
   contactNumber: '',
   specialRequirements: '',
+  college: '', // Added college field for filtering
 };
 
 export default function RoomReservationModal({ onClose, eventType, prefill = {} }) {
@@ -29,6 +32,7 @@ export default function RoomReservationModal({ onClose, eventType, prefill = {} 
   const [form, setForm] = useState({
     ...emptyForm,
     requestedBy: profile?.displayName || '',
+    college: profile?.college || '', // Pre-fill from profile if exists
     dateFiled: new Date().toLocaleDateString('en-GB'),
     building: prefill.building || '',
     room: prefill.room || '',
@@ -37,6 +41,11 @@ export default function RoomReservationModal({ onClose, eventType, prefill = {} 
   const [workflowPreview, setWorkflowPreview] = useState([]);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState('Processing...');
+
+  // Show college dropdown if user is teacher or organization head
+  const showCollegeField = requiresCollege(profile?.role);
 
   const set = (key, value) => setForm((prev) => ({ ...prev, [key]: value }));
 
@@ -92,6 +101,17 @@ export default function RoomReservationModal({ onClose, eventType, prefill = {} 
       return;
     }
     
+    if (showCollegeField && !form.college) {
+      setError('College is required.');
+      showNotification({
+        type: 'warning',
+        title: 'Missing information',
+        message: 'Please select your college.',
+        autoCloseMs: 3000,
+      });
+      return;
+    }
+    
     if (!isDraft && !workflowPreview.length) {
       setError('No approval workflow configured. Contact the Registrar.');
       showNotification({
@@ -115,12 +135,15 @@ export default function RoomReservationModal({ onClose, eventType, prefill = {} 
 
     if (!confirmed) return;
 
+    setIsLoading(true);
+    setLoadingMessage(isDraft ? 'Saving draft...' : 'Submitting reservation...');
     setBusy(true);
     try {
       await addRequest(
         {
           type: eventType,
           ...form,
+          college: form.college || profile?.college || '', // Include college for filtering
           buildingId: prefill.buildingId || selectedBuilding?.id || null,
           roomId: prefill.roomDocId || null,
           floor: prefill.floor ?? null,
@@ -152,6 +175,7 @@ export default function RoomReservationModal({ onClose, eventType, prefill = {} 
       });
     } finally {
       setBusy(false);
+      setIsLoading(false);
     }
   };
 
@@ -270,6 +294,20 @@ export default function RoomReservationModal({ onClose, eventType, prefill = {} 
               <label className="form-label">Requested By</label>
               <input className="form-input" value={form.requestedBy} onChange={(e) => set('requestedBy', e.target.value)} />
             </div>
+            {showCollegeField && (
+              <div className="col-span-2">
+                <label className="form-label">Your College <span className="text-red-600">*</span></label>
+                <select className="form-input" value={form.college} onChange={(e) => set('college', e.target.value)} required>
+                  <option value="">Select College</option>
+                  {COLLEGE_OPTIONS.map((college) => (
+                    <option key={college.value} value={college.value}>{college.label}</option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-500 mt-1">
+                  Your request will be routed to the dean of this college for approval
+                </p>
+              </div>
+            )}
             <div className="col-span-2">
               <label className="form-label">Contact Number</label>
               <input className="form-input" value={form.contactNumber} onChange={(e) => set('contactNumber', e.target.value)} />
@@ -301,6 +339,7 @@ export default function RoomReservationModal({ onClose, eventType, prefill = {} 
         </div>
       </div>
       
+      <LoadingModal isOpen={isLoading} message={loadingMessage} />
       <ModalRenderer confirmState={confirmState} notificationState={notificationState} />
     </div>
   );
