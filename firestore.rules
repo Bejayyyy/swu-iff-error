@@ -270,6 +270,38 @@ service cloud.firestore {
       );
     }
 
+    // Maintenance schedules - GSD can manage, all can read
+    match /maintenance_schedules/{scheduleId} {
+      allow read: if isMainRole() && isPhinmaedEmail();
+      allow create, update, delete: if isPhinmaedEmail() && (
+        isRegistrar() || hasRole('gsd')
+      );
+    }
+
+    // Maintenance reports - all can create/read, GSD can update
+    match /maintenance_reports/{reportId} {
+      allow read: if isMainRole() && isPhinmaedEmail();
+      allow create: if isMainRole() && isPhinmaedEmail()
+        && request.resource.data.reportedByUid == request.auth.uid;
+      allow update: if isPhinmaedEmail() && (
+        isRegistrar() 
+        || hasRole('gsd')
+        || (isMainRole() && resource.data.reportedByUid == request.auth.uid)
+      );
+      allow delete: if isPhinmaedEmail() && (isRegistrar() || hasRole('gsd'));
+    }
+
+    // Notifications - users can read their own, system can create
+    match /notifications/{notificationId} {
+      allow read: if isMainRole() && isPhinmaedEmail()
+        && resource.data.recipientUid == request.auth.uid;
+      allow create: if isMainRole() && isPhinmaedEmail();
+      allow update: if isMainRole() && isPhinmaedEmail()
+        && resource.data.recipientUid == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRead', 'readAt']);
+      allow delete: if isRegistrar() && isPhinmaedEmail();
+    }
+
     // Registrar operational data (scheduling, etc.) — not writable by Developers.
     match /{collection}/{document=**} {
       allow read, write: if isRegistrar() && isPhinmaedEmail()

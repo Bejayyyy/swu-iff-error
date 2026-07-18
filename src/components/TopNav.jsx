@@ -1,64 +1,180 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Bell, ChevronDown, User, Settings, LockKeyhole, Mail, Phone, BadgeCheck, FileText, Clock3, Menu,
+  Bell, ChevronDown, User, Settings, LockKeyhole, Mail, Phone, BadgeCheck, FileText, Clock3, Menu, AlertTriangle,
 } from 'lucide-react';
 import { NAV_WIDTH_PX, TOP_NAV_HEIGHT_PX } from '../constants/layout';
 import { useAuth } from '../context/AuthContext';
+import { useApp } from '../context/AppContext';
 import { getInitials } from '../firebase/authHelpers';
-
-const initialNotifications = [
-  {
-    id: 1,
-    type: 'Approval',
-    title: 'Academic request approved',
-    requester: 'Dr. John Mark Somoged',
-    request: 'BSIT 3A - Data Structures',
-    location: 'Engineering Building / ENG-201',
-    submittedAt: 'Today, 8:10 AM',
-    time: '2 hours ago',
-    unread: true,
-  },
-  {
-    id: 2,
-    type: 'Pending',
-    title: 'New booking request pending',
-    requester: 'Prof. Maria Santos',
-    request: 'Midterm review session',
-    location: 'Phinma Hall / PH-102',
-    submittedAt: 'Today, 7:40 AM',
-    time: '3 hours ago',
-    unread: true,
-  },
-  {
-    id: 3,
-    type: 'Conflict',
-    title: 'Schedule conflict detected',
-    requester: 'Registrar',
-    request: 'ENG-101 overlapping schedule',
-    location: 'Engineering Building / ENG-101',
-    submittedAt: 'Today, 6:15 AM',
-    time: '6 hours ago',
-    unread: false,
-  },
-];
+import { getActivePendingRecord } from '../constants/approvalWorkflow';
+import { subscribeMaintenanceReports } from '../services/maintenanceService';
 
 export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav = () => {} }) {
   const navigate = useNavigate();
   const { profile, logout } = useAuth();
-  const [notifItems, setNotifItems] = useState(initialNotifications);
+  const { requests } = useApp();
   const [showNotif, setShowNotif] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [showEditProfileModal, setShowEditProfileModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [maintenanceReports, setMaintenanceReports] = useState([]);
   const [profileForm, setProfileForm] = useState({
     fullName: profile?.displayName || 'Registrar',
     role: 'Registrar',
     email: profile?.email || '',
     phone: profile?.phone || '',
   });
+
+  const isGsd = profile?.role === 'gsd';
+
+  // Subscribe to maintenance reports for GSD
+  useEffect(() => {
+    if (!isGsd) return;
+
+    // Subscribe to ALL reports, not just pending - we'll filter for notifications
+    const unsubscribe = subscribeMaintenanceReports(
+      (reports) => {
+        // Show pending and newly reported (not yet acknowledged)
+        const unacknowledgedReports = reports.filter(r => 
+          r.status === 'pending' || r.status === 'acknowledged'
+        );
+        setMaintenanceReports(unacknowledgedReports);
+      },
+      (error) => console.error('Error loading maintenance reports:', error)
+      // Remove filter to get all reports, we filter in the callback
+    );
+
+    return () => unsubscribe();
+  }, [isGsd]);
+
+  // Helper function to format Firestore timestamp
+  const formatDate = (timestamp) => {
+    if (!timestamp) return 'N/A';
+    let date;
+    if (timestamp?.toDate) {
+      date = timestamp.toDate();
+    } else if (timestamp?.seconds) {
+      date = new Date(timestamp.seconds * 1000);
+    } else if (typeof timestamp === 'string') {
+      date = new Date(timestamp);
+    } else {
+      return 'N/A';
+    }
+    
+    const today = new Date();
+    const isToday = date.toDateString() === today.toDateString();
+    
+    if (isToday) {
+      return `Today, ${date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`;
+    }
+    
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  };
+
+  // Helper function to get relative time
+  const getTimeAgo = (timestamp) => {
+    if (!timestamp) return 'Recently';
+    
+    let date;
+    if (timestamp?.toDate) {
+      date = timestamp.toDate();
+    } else if (timestamp?.seconds) {
+      date = new Date(timestamp.seconds * 1000);
+    } else if (typeof timestamp === 'string') {
+      date = new Date(timestamp);
+    } else {
+      return 'Recently';
+    }
+
+    const now = new Date();
+    const diffMs = now - date;
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins} minute${diffMins > 1 ? 's' : ''} ago`;
+    if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+    if (diffDays < 7) return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+    return 'More than a week ago';
+  };
+
+  // Generate notifications from pending approval requests and maintenance reports
+  const notifItems = useMemo(() => {
+    const approvalNotifications = [];
+    const maintenanceNotifications = [];
+
+    // Approval notifications
+    if (requests && profile?.role) {
+      requests.forEach((req) => {
+        const pending = getActivePendingRecord(req.approvalRecords);
+        
+        // Only show notifications for requests where this user's role is pending
+        if (!pending || pending.roleId !== profile.role) return;
+
+        // Check if user is the correct dean by college
+        if (profile.role === 'dean' && req.college) {
+          const normalizedProfileCollege = (profile.college || '').trim().toLowerCase();
+          const normalizedReqCollege = (req.college || '').trim().toLowerCase();
+          if (normalizedProfileCollege !== normalizedReqCollege) return;
+        }
+
+        const timeAgo = getTimeAgo(req.createdAt);
+        const requestType = req.type === 'academic' ? 'Academic' : 'Non-Academic';
+
+        approvalNotifications.push({
+          id: req.id,
+          type: 'Pending',
+          notificationType: 'approval',
+          title: `${requestType} reservation needs approval`,
+          requester: req.requestedBy || req.requestor || 'Unknown',
+          request: req.activity || req.title || 'Room Reservation',
+          location: req.designatedVenue || req.building || 'N/A',
+          submittedAt: formatDate(req.createdAt),
+          time: timeAgo,
+          unread: true,
+          reservationId: req.id,
+          reservationType: req.type,
+        });
+      });
+    }
+
+    // Maintenance notifications (for GSD only)
+    if (isGsd && maintenanceReports.length > 0) {
+      maintenanceReports.forEach((report) => {
+        const timeAgo = getTimeAgo(report.createdAt);
+        const priorityLabel = report.priority === 'urgent' ? 'URGENT' :
+                            report.priority === 'high' ? 'High Priority' :
+                            report.priority === 'medium' ? 'Medium Priority' : 'Low Priority';
+
+        maintenanceNotifications.push({
+          id: report.id,
+          type: report.priority === 'urgent' || report.priority === 'high' ? 'Urgent' : 'Info',
+          notificationType: 'maintenance',
+          title: `${priorityLabel} maintenance report`,
+          requester: report.reportedByName || 'Unknown',
+          request: report.issue,
+          location: `${report.roomName} - ${report.buildingName}`,
+          submittedAt: formatDate(report.createdAt),
+          time: timeAgo,
+          unread: true,
+          reportId: report.id,
+          priority: report.priority,
+        });
+      });
+    }
+
+    // Combine and sort by most recent first
+    return [...maintenanceNotifications, ...approvalNotifications].sort((a, b) => {
+      const aTime = a.submittedAt === 'N/A' ? 0 : new Date(a.submittedAt).getTime();
+      const bTime = b.submittedAt === 'N/A' ? 0 : new Date(b.submittedAt).getTime();
+      return bTime - aTime;
+    });
+  }, [requests, profile, maintenanceReports, isGsd]);
+
   const displayName = profile?.displayName || 'Registrar';
   const initials = profile?.initials || getInitials(profile?.displayName, profile?.email) || 'R';
 
@@ -67,7 +183,25 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
     await logout();
     navigate('/login');
   };
-  const unreadCount = notifItems.filter((n) => n.unread).length;
+
+  const handleViewRequest = (notification) => {
+    setShowNotif(false);
+    
+    if (notification.notificationType === 'maintenance') {
+      // Navigate to maintenance dashboard
+      navigate('/maintenance-dashboard');
+    } else {
+      // Navigate to the request details page based on type
+      const isAcademic = notification.reservationType === 'academic';
+      const path = isAcademic 
+        ? `/academic-request/${notification.reservationId}` 
+        : `/request/${notification.reservationId}`;
+      
+      navigate(path);
+    }
+  };
+
+  const unreadCount = notifItems.length; // All pending approvals are considered unread
   const r = 10;
   const closeAll = () => {
     setShowNotif(false);
@@ -79,10 +213,6 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
   };
   const hasAnyOverlay =
     showNotif || showProfile || showProfileModal || showEditProfileModal || showSettingsModal || showForgotPassword;
-  const sortedNotifications = useMemo(
-    () => [...notifItems].sort((a, b) => Number(b.unread) - Number(a.unread)),
-    [notifItems],
-  );
 
   return (
     <div
@@ -226,48 +356,96 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
               </button>
             </div>
             <div className="overflow-y-auto">
-              {sortedNotifications.map((n) => (
-                <div key={n.id} className={`px-6 py-4 border-b border-gray-100 ${n.unread ? 'bg-[#FFFBFB]' : 'bg-white'}`}>
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <span
-                        className="inline-flex items-center text-[10px] font-black mb-1 px-2 py-0.5"
-                        style={{
-                          color: n.type === 'Pending' ? '#92400E' : n.type === 'Conflict' ? '#991B1B' : '#065F46',
-                          background: n.type === 'Pending' ? '#FEF3C7' : n.type === 'Conflict' ? '#FEE2E2' : '#D1FAE5',
-                          borderRadius: 6,
+              {notifItems.length === 0 ? (
+                <div className="px-6 py-12 text-center">
+                  <Bell size={48} className="mx-auto mb-3" style={{ color: '#D1D5DB' }} />
+                  <p className="text-sm font-bold mb-1" style={{ color: '#2B3235' }}>No new notifications</p>
+                  <p className="text-xs" style={{ color: '#2B3235', opacity: 0.65 }}>
+                    You're all caught up! Check back later for updates.
+                  </p>
+                </div>
+              ) : (
+                notifItems.map((n) => {
+                  const isMaintenance = n.notificationType === 'maintenance';
+                  const isUrgent = n.priority === 'urgent' || n.priority === 'high';
+                  
+                  return (
+                  <div 
+                    key={n.id} 
+                    className={`px-6 py-4 border-b border-gray-100 transition-colors cursor-pointer ${
+                      isMaintenance 
+                        ? (isUrgent ? 'bg-red-50 hover:bg-red-100' : 'bg-orange-50 hover:bg-orange-100')
+                        : 'bg-[#FFFBFB] hover:bg-[#FFF5F5]'
+                    }`}
+                    onClick={() => handleViewRequest(n)}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-start gap-3 flex-1 min-w-0">
+                        {isMaintenance && (
+                          <div className={`p-2 rounded-lg flex-shrink-0 ${
+                            isUrgent ? 'bg-red-100' : 'bg-orange-100'
+                          }`}>
+                            <AlertTriangle size={18} className={isUrgent ? 'text-red-600' : 'text-orange-600'} />
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <span
+                            className="inline-flex items-center text-[10px] font-black mb-1 px-2 py-0.5"
+                            style={{
+                              color: isMaintenance ? (isUrgent ? '#991B1B' : '#9A3412') : '#92400E',
+                              background: isMaintenance ? (isUrgent ? '#FEE2E2' : '#FFEDD5') : '#FEF3C7',
+                              borderRadius: 6,
+                            }}
+                          >
+                            {isMaintenance ? (isUrgent ? '⚠️ URGENT' : 'Maintenance Report') : 'Pending Approval'}
+                          </span>
+                          <p className="text-sm font-bold truncate" style={{ color: '#2B3235' }}>{n.title}</p>
+                          <p className="text-xs mt-1 truncate" style={{ color: '#2B3235', opacity: 0.85 }}>
+                            <span className="font-bold">{isMaintenance ? 'Reported by:' : 'Requester:'}</span> {n.requester}
+                          </p>
+                          <p className="text-xs truncate" style={{ color: '#2B3235', opacity: 0.85 }}>
+                            <span className="font-bold">{isMaintenance ? 'Issue:' : 'Activity:'}</span> {n.request}
+                          </p>
+                          <p className="text-xs truncate" style={{ color: '#2B3235', opacity: 0.85 }}>
+                            <span className="font-bold">Location:</span> {n.location}
+                          </p>
+                          <p className="text-[11px] mt-2" style={{ color: '#2B3235', opacity: 0.55 }}>
+                            {n.submittedAt} · {n.time}
+                          </p>
+                        </div>
+                      </div>
+                      <span 
+                        className="text-[10px] font-black px-2 py-1 text-white flex-shrink-0" 
+                        style={{ 
+                          background: isMaintenance ? (isUrgent ? '#DC2626' : '#F97316') : '#800000',
+                          borderRadius: 6 
                         }}
                       >
-                        {n.type}
+                        NEW
                       </span>
-                      <p className="text-sm font-bold" style={{ color: '#2B3235' }}>{n.title}</p>
-                      <p className="text-xs mt-1" style={{ color: '#2B3235', opacity: 0.85 }}>
-                        <span className="font-bold">Requester:</span> {n.requester}
-                      </p>
-                      <p className="text-xs" style={{ color: '#2B3235', opacity: 0.85 }}>
-                        <span className="font-bold">Request:</span> {n.request}
-                      </p>
-                      <p className="text-xs" style={{ color: '#2B3235', opacity: 0.85 }}>
-                        <span className="font-bold">Location:</span> {n.location}
-                      </p>
-                      <p className="text-[11px] mt-2" style={{ color: '#2B3235', opacity: 0.55 }}>
-                        {n.submittedAt} · {n.time}
-                      </p>
                     </div>
-                    {n.unread && <span className="text-[10px] font-black px-2 py-1 text-white bg-[#800000]" style={{ borderRadius: 6 }}>NEW</span>}
+                    <div className="mt-3">
+                      <button 
+                        type="button" 
+                        className={`text-xs py-2 px-3 font-bold rounded-lg transition-all ${
+                          isMaintenance 
+                            ? (isUrgent 
+                                ? 'bg-red-600 text-white hover:bg-red-700' 
+                                : 'bg-orange-600 text-white hover:bg-orange-700')
+                            : 'btn-maroon'
+                        }`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleViewRequest(n);
+                        }}
+                      >
+                        {isMaintenance ? 'View Maintenance Report' : 'View & Review Request'}
+                      </button>
+                    </div>
                   </div>
-                  <div className="mt-3 flex gap-2">
-                    <button type="button" className="btn-maroon text-xs py-2 px-3">View request details</button>
-                    <button
-                      type="button"
-                      className="btn-outline-maroon text-xs py-2 px-3"
-                      onClick={() => setNotifItems((prev) => prev.map((x) => (x.id === n.id ? { ...x, unread: false } : x)))}
-                    >
-                      Mark as read
-                    </button>
-                  </div>
-                </div>
-              ))}
+                  );
+                })
+              )}
             </div>
           </div>
         </div>
@@ -283,7 +461,7 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
             <div className="px-6 py-5 border-b border-gray-100" style={{ background: '#FFFBFB' }}>
               <div className="flex items-center gap-3">
                 <div className="w-12 h-12 flex items-center justify-center text-[#2B3235] font-black text-base" style={{ background: '#FFC107', borderRadius: 10 }}>
-                  K
+                  {initials}
                 </div>
                 <div>
                   <h3 className="font-black text-base" style={{ color: '#2B3235' }}>My Profile</h3>

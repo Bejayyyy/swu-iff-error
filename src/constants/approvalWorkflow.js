@@ -33,34 +33,64 @@ export function isReservationActionable(reservation, role, profile) {
   return pending?.roleId === role;
 }
 
+/**
+ * Filter reservations that this role has interacted with (pending, approved, or rejected)
+ * Includes requests where user needs to approve OR has already approved/rejected
+ */
 export function filterReservationsForRole(reservations, role, profile) {
   if (!role || !profile) return [];
 
   return reservations.filter((reservation) => {
-    // Users always see their own reservations (for tracking status)
-    if (reservation.createdByUid === profile.uid) return true;
+    // Skip user's own reservations - they should be in "My Requests" section
+    if (reservation.createdByUid === profile.uid) {
+      return false;
+    }
 
-    // Get the current pending approval record
-    const pending = getActivePendingRecord(reservation.approvalRecords);
+    // Skip reservations without proper approval workflow
+    if (!Array.isArray(reservation.approvalRecords) || !reservation.approvalRecords.length) {
+      return false;
+    }
+
+    // Check if this role is in the approval workflow at all
+    const myRecord = reservation.approvalRecords.find((r) => r.roleId === role);
+    if (!myRecord) {
+      return false; // This role is not part of the approval workflow
+    }
+
+    // Show if: 
+    // 1. This role is currently pending (needs action)
+    // 2. This role has already approved (for tracking)
+    // 3. This role has rejected (for tracking)
+    const isPending = myRecord.status === APPROVAL_RECORD_STATUS.PENDING;
+    const hasActed = myRecord.status === APPROVAL_RECORD_STATUS.APPROVED || 
+                     myRecord.status === APPROVAL_RECORD_STATUS.REJECTED;
     
-    // Only show reservations where this role is the current pending approver
-    // This applies to ALL roles including registrar - no special treatment
-    if (!pending || pending.roleId !== role) return false;
+    if (!isPending && !hasActed) {
+      return false; // Still waiting, hasn't reached this role yet
+    }
     
     // For deans, additionally filter by college
     if (role === 'dean') {
-      // Match by college
       if (profile.college && reservation.college) {
         const normalizedProfileCollege = (profile.college || '').trim().toLowerCase();
         const normalizedReservationCollege = (reservation.college || '').trim().toLowerCase();
         return normalizedProfileCollege === normalizedReservationCollege;
       }
-      // If no college specified, show all (backward compatibility)
-      return true;
+      return true; // No college filter
     }
     
-    // For all other roles (including registrar), if we reach here and pending matches their role, show it
     return true;
+  });
+}
+
+/**
+ * Filter reservations created by this user (for tracking their own requests)
+ */
+export function filterMyReservations(reservations, profile) {
+  if (!profile) return [];
+  
+  return reservations.filter((reservation) => {
+    return reservation.createdByUid === profile.uid;
   });
 }
 

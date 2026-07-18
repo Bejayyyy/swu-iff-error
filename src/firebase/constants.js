@@ -41,6 +41,8 @@ export const COLLECTIONS = {
   APPROVAL_WORKFLOWS: 'approval_workflows',
   ROOM_RESERVATIONS: 'room_reservations',
   ROLE_DEFINITIONS: 'role_definitions',
+  MAINTENANCE_SCHEDULES: 'maintenance_schedules',
+  MAINTENANCE_REPORTS: 'maintenance_reports',
 };
 
 /** Default permission keys assignable to Registrar accounts by Developers */

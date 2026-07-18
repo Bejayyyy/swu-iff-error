@@ -1,5 +1,5 @@
 import { ROLES } from '../firebase/constants';
-import { filterReservationsForRole } from './approvalWorkflow';
+import { filterReservationsForRole, filterMyReservations } from './approvalWorkflow';
 
 /** Permission keys used across routes, nav, and page actions */
 export const PERMISSIONS = {
@@ -70,6 +70,7 @@ export const ROUTE_PERMISSIONS = {
   '/reports': PERMISSIONS.REPORTS_VIEW,
   '/system-administration': PERMISSIONS.SYSTEM_ADMIN,
   '/approval-workflow': PERMISSIONS.APPROVAL_WORKFLOW_MANAGE,
+  '/maintenance-dashboard': PERMISSIONS.ROOMS_MAINTENANCE_MANAGE,
 };
 
 export const NAV_ITEMS = {
@@ -84,6 +85,7 @@ export const NAV_ITEMS = {
   reports: { label: 'Reports & Analytics', path: '/reports', permission: PERMISSIONS.REPORTS_VIEW },
   systemAdmin: { label: 'System Administration', path: '/system-administration', permission: PERMISSIONS.SYSTEM_ADMIN },
   approvalWorkflow: { label: 'Approval Workflow', path: '/approval-workflow', permission: PERMISSIONS.APPROVAL_WORKFLOW_MANAGE },
+  maintenanceDashboard: { label: 'Maintenance Dashboard', path: '/maintenance-dashboard', permission: PERMISSIONS.ROOMS_MAINTENANCE_MANAGE },
 };
 
 const ROLE_NAV_KEYS = {
@@ -96,7 +98,7 @@ const ROLE_NAV_KEYS = {
     'scheduleHistory', 'buildings', 'academicCalendar',
   ],
   [ROLES.GSD]: [
-    'dashboard', 'approvals', 'roomAvailability', 'scheduleHistory', 'buildings', 'academicCalendar',
+    'dashboard', 'approvals', 'maintenanceDashboard', 'roomAvailability', 'scheduleHistory', 'buildings', 'academicCalendar',
   ],
   [ROLES.STUDENT_LIFE]: [
     'dashboard', 'approvals', 'roomAvailability', 'scheduleHistory', 'academicCalendar',
@@ -323,6 +325,18 @@ export function filterRequestsForRole(requests, role, profile) {
     return requests.filter((r) => (r.requestorEmail || r.requestor || '').toLowerCase().includes(email.split('@')[0]));
   }
   return requests;
+}
+
+export function filterMyRequests(requests, profile) {
+  if (!requests?.length || !profile) return [];
+  
+  const hasDynamicWorkflow = requests.some((r) => Array.isArray(r.approvalRecords) && r.approvalRecords.length);
+  if (hasDynamicWorkflow) {
+    return filterMyReservations(requests, profile);
+  }
+  
+  // Fallback for legacy requests
+  return requests.filter((r) => r.createdByUid === profile.uid);
 }
 
 export function canCreateRequestType(role, requestType, roleDefinitions = {}, profile = null) {

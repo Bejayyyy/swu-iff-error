@@ -24,6 +24,7 @@ import AcademicCalendar from './pages/AcademicCalendar';
 import Reports from './pages/Reports';
 import SystemAdministration from './pages/SystemAdministration';
 import ApprovalWorkflowManagement from './pages/ApprovalWorkflowManagement';
+import MaintenanceDashboard from './pages/MaintenanceDashboard';
 
 function RegistrarPage({ children }) {
   return <RegistrarRoute>{children}</RegistrarRoute>;
@@ -84,6 +85,7 @@ export default function App() {
             <Route path="/room/:id" element={<RegistrarPage><RoomDetails /></RegistrarPage>} />
             <Route path="/request/:id" element={<RegistrarPage><NonAcademicRequestDetails /></RegistrarPage>} />
             <Route path="/academic-request/:id" element={<RegistrarPage><AcademicRequestDetails /></RegistrarPage>} />
+            <Route path="/maintenance-dashboard" element={<RegistrarPage><MaintenanceDashboard /></RegistrarPage>} />
           </Routes>
         </BrowserRouter>
         </AppProvider>

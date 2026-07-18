@@ -36,6 +36,12 @@ function mapRoomDoc(roomDoc) {
     floorId: data.floorId,
     floorNumber: data.floorNumber,
     buildingId: data.buildingId,
+    // Maintenance fields
+    maintenanceStatus: data.maintenanceStatus || 'operational',
+    maintenanceStartDate: data.maintenanceStartDate || null,
+    maintenanceEndDate: data.maintenanceEndDate || null,
+    maintenanceReason: data.maintenanceReason || null,
+    maintenanceScheduleId: data.maintenanceScheduleId || null,
   };
 }
 
@@ -219,6 +225,12 @@ export async function addRoomToFloor(buildingId, floorId, floorNumber, room) {
     status: room.status || 'Available',
     capacity: Number(room.capacity) || 0,
     equipment: room.equipment || [],
+    // Maintenance fields
+    maintenanceStatus: 'operational', // operational, under-maintenance
+    maintenanceStartDate: null,
+    maintenanceEndDate: null,
+    maintenanceReason: null,
+    maintenanceScheduleId: null,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });

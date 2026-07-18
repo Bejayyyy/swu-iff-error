@@ -179,19 +179,39 @@ export default function BuildingDetails() {
               </div>
             ) : (
               <div className="space-y-3">
-                {floorData.rooms.map((room) => (
-                  <div key={room.docId || room.id} className="border border-gray-100 rounded-xl p-5 hover:shadow-sm transition-shadow">
+                {floorData.rooms.map((room) => {
+                  const isUnderMaintenance = room.maintenanceStatus === 'under-maintenance';
+                  
+                  return (
+                  <div 
+                    key={room.docId || room.id} 
+                    className={`border border-gray-100 rounded-xl p-5 transition-all ${
+                      isUnderMaintenance 
+                        ? 'bg-gray-50 opacity-60' 
+                        : 'hover:shadow-sm'
+                    }`}
+                    style={isUnderMaintenance ? { filter: 'blur(0.5px)' } : {}}
+                  >
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-3 mb-2 flex-wrap">
                           <h4 className="font-black text-base text-dark">{room.id || room.name}</h4>
-                          <span className={statusBadge[room.status] || 'badge-available'}>{room.status}</span>
+                          {isUnderMaintenance ? (
+                            <span className="badge-maintenance">Under Maintenance</span>
+                          ) : (
+                            <span className={statusBadge[room.status] || 'badge-available'}>{room.status}</span>
+                          )}
                         </div>
                         <p className="text-xs text-gray-400 mb-2">{room.type}</p>
                         <p className="text-xs text-gray-500">Capacity: {room.capacity}</p>
+                        {isUnderMaintenance && room.maintenanceEndDate && (
+                          <p className="text-[11px] font-bold text-orange-600 mt-2">
+                            Maintenance until {room.maintenanceEndDate}
+                          </p>
+                        )}
                       </div>
                       <div className="flex gap-2 flex-shrink-0 flex-wrap">
-                        {canSubmitReservation() && (
+                        {canSubmitReservation() && !isUnderMaintenance && (
                           <button
                             type="button"
                             onClick={() => openReservation({
@@ -235,7 +255,8 @@ export default function BuildingDetails() {
                       </div>
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
 

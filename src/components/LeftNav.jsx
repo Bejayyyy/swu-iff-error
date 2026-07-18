@@ -103,7 +103,7 @@ export default function LeftNav({
               >
                 {label}
               </span>
-              {label === 'Approval Management' && pendingCount > 0 && (
+              {path === '/approvals' && pendingCount > 0 && (
                 <span className="bg-[#800000] text-white text-[10px] font-black min-w-[18px] h-[18px] px-1 rounded-md flex items-center justify-center flex-shrink-0">
                   {pendingCount}
                 </span>
@@ -191,10 +191,14 @@ export default function LeftNav({
                     </div>
                     {isFloorExpanded && floorObj.rooms.map((room) => {
                       const roomActive = location.pathname === `/room/${room.id}`;
+                      const isUnderMaintenance = room.maintenanceStatus === 'under-maintenance';
+                      
                       return (
                         <div
                           key={room.id}
-                          className={`flex items-center gap-1.5 py-1 pl-12 pr-2 rounded-lg cursor-pointer group ${roomActive ? 'bg-gray-100' : 'hover:bg-gray-100'}`}
+                          className={`flex items-center gap-1.5 py-1 pl-12 pr-2 rounded-lg cursor-pointer group ${
+                            roomActive ? 'bg-gray-100' : 'hover:bg-gray-100'
+                          } ${isUnderMaintenance ? 'opacity-50' : ''}`}
                           onClick={() =>
                             navigate(`/room/${room.id}`, {
                               state: {
@@ -215,19 +219,31 @@ export default function LeftNav({
                           />
                           <div
                             className={`w-1.5 h-1.5 rounded-full ${
-                              room.status === 'Available' ? 'bg-green-500' : room.status === 'Occupied' ? 'bg-red-500' : 'bg-yellow-500'
+                              isUnderMaintenance
+                                ? 'bg-orange-500'
+                                : room.status === 'Available'
+                                  ? 'bg-green-500'
+                                  : room.status === 'Occupied'
+                                    ? 'bg-red-500'
+                                    : 'bg-yellow-500'
                             }`}
                           />
                           <span
-                            className={`text-[11px] font-medium truncate ${roomActive ? 'text-[#800000]' : 'text-[#2B3235] group-hover:text-[#800000]'}`}
+                            className={`text-[11px] font-medium truncate ${
+                              roomActive ? 'text-[#800000]' : 'text-[#2B3235] group-hover:text-[#800000]'
+                            }`}
                           >
                             {room.id}
                           </span>
-                          {room.type === 'Lecture Room' && (
+                          {isUnderMaintenance ? (
+                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md" style={{ background: '#FFF4E6', color: '#F97316' }}>
+                              Maintenance
+                            </span>
+                          ) : room.type === 'Lecture Room' ? (
                             <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md" style={{ background: '#FFF0F0', color: MAROON }}>
                               Lecture
                             </span>
-                          )}
+                          ) : null}
                         </div>
                       );
                     })}

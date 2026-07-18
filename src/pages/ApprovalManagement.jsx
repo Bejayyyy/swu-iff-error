@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Plus, ClipboardList, Clock, CheckCircle, XCircle, MoreVertical, MapPin, Users, Calendar, Trash2 } from 'lucide-react';
 import Layout from '../components/Layout';
 import { useApp } from '../context/AppContext';
@@ -9,21 +9,23 @@ import { useRoomReservationFlow } from '../hooks/useRoomReservationFlow';
 import { useModal } from '../hooks/useModal';
 import ProgressStatCards from '../components/ProgressStatCards';
 import { CategoryFilterTabs, StatusFilterRow } from '../components/FilterControls';
-import { buildApprovalFlowLabel } from '../constants/approvalWorkflow';
-import { RESERVATION_STATUS } from '../constants/approvalWorkflow';
+import { buildApprovalFlowLabel, RESERVATION_STATUS, APPROVAL_RECORD_STATUS } from '../constants/approvalWorkflow';
 import { ModalRenderer } from '../components/modals/ModalProvider';
 import LoadingModal from '../components/modals/LoadingModal';
 import { deleteRoomReservation } from '../services/reservationService';
 
 export default function ApprovalManagement() {
   const navigate = useNavigate();
+  const { state } = useLocation();
   const { requests } = useApp();
   const { profile } = useAuth();
   const {
+    role,
     roleLabel,
     canSubmitReservation,
     canCreateRequestType,
     filterRequests,
+    filterMyRequests,
     canEndorseActivity,
     canManageRoomActivityApproval,
     canManageStudentActivityApproval,
@@ -34,20 +36,111 @@ export default function ApprovalManagement() {
   const showAcademicTab = isRegistrar || canEndorseActivity() || canCreateRequestType('academic');
   const showNonAcademicTab = isRegistrar || canSubmitReservation() || canManageRoomActivityApproval() || canManageStudentActivityApproval();
 
-  const [tab, setTab] = useState(showNonAcademicTab && !showAcademicTab ? 'non-academic' : 'academic');
+  // Get initial values from navigation state (from notifications)
+  const initialTab = state?.tab || (showNonAcademicTab && !showAcademicTab ? 'non-academic' : 'academic');
+  const initialSection = state?.section || 'approvals';
+
+  const [tab, setTab] = useState(initialTab);
   const [filter, setFilter] = useState('All');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
   const [actionMenuOpen, setActionMenuOpen] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState('Processing...');
+  const [showSection, setShowSection] = useState(initialSection); // 'approvals' or 'my-requests'
   const { openReservation, modals } = useRoomReservationFlow();
 
+  // Requests that need my approval
   const roleRequests = filterRequests(requests);
+  
+  // My own requests (for tracking)
+  const myRequests = filterMyRequests(requests);
+
+  // Helper function to get role-specific status
+  const getRoleSpecificStatus = (reservation) => {
+    if (!reservation.approvalRecords || !role) return reservation.status;
+    
+    const myRecord = reservation.approvalRecords.find((r) => r.roleId === role);
+    if (!myRecord) return reservation.status;
+    
+    // If this role has approved/rejected, show that status for this role
+    if (myRecord.status === APPROVAL_RECORD_STATUS.APPROVED) return 'Approved';
+    if (myRecord.status === APPROVAL_RECORD_STATUS.REJECTED) return 'Rejected';
+    if (myRecord.status === APPROVAL_RECORD_STATUS.PENDING) return 'Pending';
+    
+    // If waiting, still show as pending since it hasn't reached this role
+    return 'Pending';
+  };
 
   const filtered = roleRequests.filter((r) => {
     const typeMatch = tab === 'academic' ? r.type === 'academic' : r.type === 'non-academic';
+    
+    // Use role-specific status for filtering
+    const roleStatus = getRoleSpecificStatus(r);
+    const statusMatch = filter === 'All' || 
+                       roleStatus === filter || 
+                       (filter === 'Pending' && roleStatus === 'Pending');
+    
+    // Date range filter
+    let dateMatch = true;
+    if (dateFrom || dateTo) {
+      const activityDate = r.dateOfActivity || r.dateStart || '';
+      if (activityDate) {
+        // Convert DD/MM/YYYY to YYYY-MM-DD for comparison
+        const parts = activityDate.split('/');
+        const isoDate = parts.length === 3 ? `${parts[2]}-${parts[1]}-${parts[0]}` : activityDate;
+        
+        if (dateFrom && isoDate < dateFrom) dateMatch = false;
+        if (dateTo && isoDate > dateTo) dateMatch = false;
+      }
+    }
+    
+    // Search filter
+    let searchMatch = true;
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      searchMatch = 
+        (r.title || '').toLowerCase().includes(query) ||
+        (r.department || '').toLowerCase().includes(query) ||
+        (r.requestor || '').toLowerCase().includes(query) ||
+        (r.venue || r.designatedVenue || '').toLowerCase().includes(query);
+    }
+    
+    return typeMatch && statusMatch && dateMatch && searchMatch;
+  });
+
+  const myFiltered = myRequests.filter((r) => {
+    const typeMatch = tab === 'academic' ? r.type === 'academic' : r.type === 'non-academic';
     const normalizedStatus = r.status === RESERVATION_STATUS.IN_PROGRESS ? 'Pending' : r.status;
     const statusMatch = filter === 'All' || r.status === filter || (filter === 'Pending' && normalizedStatus === 'Pending');
-    return typeMatch && statusMatch;
+    
+    // Date range filter
+    let dateMatch = true;
+    if (dateFrom || dateTo) {
+      const activityDate = r.dateOfActivity || r.dateStart || '';
+      if (activityDate) {
+        // Convert DD/MM/YYYY to YYYY-MM-DD for comparison
+        const parts = activityDate.split('/');
+        const isoDate = parts.length === 3 ? `${parts[2]}-${parts[1]}-${parts[0]}` : activityDate;
+        
+        if (dateFrom && isoDate < dateFrom) dateMatch = false;
+        if (dateTo && isoDate > dateTo) dateMatch = false;
+      }
+    }
+    
+    // Search filter
+    let searchMatch = true;
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      searchMatch = 
+        (r.title || '').toLowerCase().includes(query) ||
+        (r.department || '').toLowerCase().includes(query) ||
+        (r.requestor || '').toLowerCase().includes(query) ||
+        (r.venue || r.designatedVenue || '').toLowerCase().includes(query);
+    }
+    
+    return typeMatch && statusMatch && dateMatch && searchMatch;
   });
 
   const academicReqs = roleRequests.filter((r) => r.type === 'academic');
@@ -58,18 +151,30 @@ export default function ApprovalManagement() {
     ? 'Review and approve schedules and room utilization requests'
     : `${roleLabel} — view and manage requests within your role`;
 
+  // Stats for approvals section - use role-specific status
   const counts = {
     total: filtered.length,
-    pending: filtered.filter((r) => r.status === 'Pending' || r.status === RESERVATION_STATUS.IN_PROGRESS).length,
-    approved: filtered.filter((r) => r.status === 'Approved').length,
-    rejected: filtered.filter((r) => r.status === 'Rejected').length,
+    pending: filtered.filter((r) => getRoleSpecificStatus(r) === 'Pending').length,
+    approved: filtered.filter((r) => getRoleSpecificStatus(r) === 'Approved').length,
+    rejected: filtered.filter((r) => getRoleSpecificStatus(r) === 'Rejected').length,
   };
 
+  // Stats for my requests section
+  const myCounts = {
+    total: myFiltered.length,
+    pending: myFiltered.filter((r) => r.status === 'Pending' || r.status === RESERVATION_STATUS.IN_PROGRESS).length,
+    approved: myFiltered.filter((r) => r.status === 'Approved').length,
+    rejected: myFiltered.filter((r) => r.status === 'Rejected').length,
+  };
+
+  const displayCounts = showSection === 'approvals' ? counts : myCounts;
+  const displayRequests = showSection === 'approvals' ? filtered : myFiltered;
+
   const stats = [
-    { label: 'Total Request', value: counts.total, icon: ClipboardList, accent: 'total' },
-    { label: 'Pending', value: counts.pending, icon: Clock, accent: 'pending' },
-    { label: 'Approved', value: counts.approved, icon: CheckCircle, accent: 'approved' },
-    { label: 'Rejected', value: counts.rejected, icon: XCircle, accent: 'rejected' },
+    { label: 'Total Request', value: displayCounts.total, icon: ClipboardList, accent: 'total' },
+    { label: 'Pending', value: displayCounts.pending, icon: Clock, accent: 'pending' },
+    { label: 'Approved', value: displayCounts.approved, icon: CheckCircle, accent: 'approved' },
+    { label: 'Rejected', value: displayCounts.rejected, icon: XCircle, accent: 'rejected' },
   ];
 
   const handleDeleteReservation = async (reservation) => {
@@ -134,9 +239,37 @@ export default function ApprovalManagement() {
         <ProgressStatCards items={stats} />
       </div>
 
+      {/* Section Toggle */}
+      <div className="mb-4 flex gap-2">
+        <button
+          type="button"
+          onClick={() => { setShowSection('approvals'); setFilter('All'); }}
+          className={`px-4 py-2 rounded-xl font-bold text-sm transition-all ${
+            showSection === 'approvals'
+              ? 'bg-[#800000] text-white'
+              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+          }`}
+        >
+          Requests to Approve ({roleRequests.length})
+        </button>
+        <button
+          type="button"
+          onClick={() => { setShowSection('my-requests'); setFilter('All'); }}
+          className={`px-4 py-2 rounded-xl font-bold text-sm transition-all ${
+            showSection === 'my-requests'
+              ? 'bg-[#800000] text-white'
+              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+          }`}
+        >
+          My Requests ({myRequests.length})
+        </button>
+      </div>
+
       {/* Request History */}
       <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
-        <h2 className="font-bold text-base mb-4" style={{ color: '#2B3235' }}>Request History</h2>
+        <h2 className="font-bold text-base mb-4" style={{ color: '#2B3235' }}>
+          {showSection === 'approvals' ? 'Requests Requiring Approval' : 'My Request History'}
+        </h2>
 
         <div className="flex flex-col gap-3 mb-5 w-fit max-w-full">
           {(showAcademicTab || showNonAcademicTab) && (
@@ -152,12 +285,59 @@ export default function ApprovalManagement() {
           <StatusFilterRow value={filter} onChange={setFilter} />
         </div>
 
+        {/* Additional Filters */}
+        <div className="flex flex-wrap gap-3 mb-5">
+          <div className="flex items-center gap-2">
+            <Calendar size={14} className="text-gray-400" />
+            <label className="text-xs font-bold text-gray-600">From:</label>
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#800000]/20"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <Calendar size={14} className="text-gray-400" />
+            <label className="text-xs font-bold text-gray-600">To:</label>
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#800000]/20"
+            />
+          </div>
+          <div className="flex-1 min-w-[200px]">
+            <input
+              type="text"
+              placeholder="Search by title, department, requestor, or venue..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full px-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#800000]/20"
+            />
+          </div>
+          {(dateFrom || dateTo || searchQuery) && (
+            <button
+              type="button"
+              onClick={() => { setDateFrom(''); setDateTo(''); setSearchQuery(''); }}
+              className="px-3 py-1.5 text-xs font-bold text-[#800000] hover:bg-red-50 rounded-lg transition-colors"
+            >
+              Clear Filters
+            </button>
+          )}
+        </div>
+
         {/* Request Cards */}
-        {filtered.length === 0 ? (
-          <div className="text-center py-12 text-gray-400 text-sm">No requests found.</div>
+        {displayRequests.length === 0 ? (
+          <div className="text-center py-12 text-gray-400 text-sm">
+            {showSection === 'approvals' ? 'No requests awaiting your approval.' : 'You have not created any requests yet.'}
+          </div>
         ) : (
-          filtered.map(req => {
+          displayRequests.map(req => {
             const canDelete = isRegistrar || req.createdByUid === profile?.uid;
+            
+            // Get role-specific status for display
+            const roleStatus = showSection === 'approvals' ? getRoleSpecificStatus(req) : req.status;
             
             return (
             <div key={req.id} className="request-card">
@@ -166,7 +346,12 @@ export default function ApprovalManagement() {
                   <span className={req.priority === 'High' ? 'priority-high' : 'priority-medium'}>
                     {req.priority || 'Medium'} Priority
                   </span>
-                  <span className={`badge-${req.status?.toLowerCase()}`}>{req.status}</span>
+                  <span className={`badge-${roleStatus?.toLowerCase()}`}>{roleStatus}</span>
+                  {showSection === 'approvals' && req.status !== roleStatus && (
+                    <span className="text-[10px] font-bold text-gray-400 px-2 py-0.5 bg-gray-50 rounded">
+                      Overall: {req.status}
+                    </span>
+                  )}
                 </div>
                 
                 {/* Action Menu */}

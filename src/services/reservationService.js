@@ -9,6 +9,8 @@ import {
   orderBy,
   runTransaction,
   deleteDoc,
+  where,
+  getDocs,
 } from 'firebase/firestore';
 import { db } from '../firebase/firebase';
 import { COLLECTIONS } from '../firebase/constants';
@@ -80,6 +82,16 @@ export async function createRoomReservation(payload, { draft = false } = {}) {
     ? APPROVAL_TYPES.ACADEMIC
     : APPROVAL_TYPES.NON_ACADEMIC;
 
+  // Check for time conflicts with approved reservations and maintenance if not a draft
+  if (!draft && payload.roomId && payload.dateOfActivity && payload.timeStart && payload.timeEnd) {
+    await checkReservationTimeConflict({
+      roomDocId: payload.roomId, // roomId should be the Firestore document ID
+      dateOfActivity: payload.dateOfActivity,
+      timeStart: payload.timeStart,
+      timeEnd: payload.timeEnd,
+    });
+  }
+
   const workflowSnapshot = await getWorkflowSnapshot(approvalType);
   const approvalRecords = buildApprovalRecords(workflowSnapshot, !draft);
   const ref = doc(reservationsCollection());
@@ -108,7 +120,8 @@ export async function createRoomReservation(payload, { draft = false } = {}) {
     building: payload.building || '',
     buildingId: payload.buildingId || null,
     room: payload.room || '',
-    roomId: payload.roomId || null,
+    roomId: payload.roomId || null,  // This is the Firestore document ID
+    roomDocId: payload.roomId || null, // Store explicitly for clarity
     floor: payload.floor ?? null,
     floorId: payload.floorId || null,
     workflowSnapshot,
@@ -253,4 +266,152 @@ export async function deleteRoomReservation(reservationId) {
   }
   
   await deleteDoc(ref);
+}
+
+/**
+ * Check if a time slot is already reserved or under maintenance
+ * @throws Error if there's a conflict
+ */
+export async function checkReservationTimeConflict({
+  roomDocId,
+  dateOfActivity,
+  timeStart,
+  timeEnd,
+  excludeReservationId = null,
+}) {
+  if (!roomDocId || !dateOfActivity || !timeStart || !timeEnd) {
+    return; // Skip validation if required fields are missing
+  }
+
+  // Convert DD/MM/YYYY to YYYY-MM-DD for comparison
+  let isoDate = dateOfActivity;
+  if (dateOfActivity.includes('/')) {
+    const parts = dateOfActivity.split('/');
+    if (parts.length === 3) {
+      isoDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+    }
+  }
+
+  // Convert time strings to minutes for comparison
+  const toMinutes = (timeStr) => {
+    if (!timeStr) return 0;
+    const [hours, minutes] = timeStr.split(':').map(Number);
+    return hours * 60 + minutes;
+  };
+
+  const newStart = toMinutes(timeStart);
+  const newEnd = toMinutes(timeEnd);
+
+  // Check 1: Approved reservations
+  const reservationsQuery = query(
+    reservationsCollection(),
+    where('roomDocId', '==', roomDocId),
+    where('dateOfActivity', '==', dateOfActivity),
+    where('status', '==', RESERVATION_STATUS.APPROVED)
+  );
+
+  const reservationsSnapshot = await getDocs(reservationsQuery);
+  const existingReservations = reservationsSnapshot.docs
+    .map(mapReservationDoc)
+    .filter(r => !excludeReservationId || r.id !== excludeReservationId);
+
+  // Check for reservation overlaps
+  for (const existing of existingReservations) {
+    const existingStart = toMinutes(existing.timeStart);
+    const existingEnd = toMinutes(existing.timeEnd);
+
+    // Check if times overlap
+    const hasOverlap = (newStart < existingEnd && newEnd > existingStart);
+
+    if (hasOverlap) {
+      throw new Error(
+        `Time conflict: This room is already reserved from ${existing.timeStart} to ${existing.timeEnd} on this date for "${existing.activity}".`
+      );
+    }
+  }
+
+  // Check 2: Maintenance schedules
+  const maintenanceQuery = query(
+    collection(db, COLLECTIONS.MAINTENANCE_SCHEDULES),
+    where('roomId', '==', roomDocId),
+    where('status', 'in', ['scheduled', 'in-progress'])
+  );
+
+  const maintenanceSnapshot = await getDocs(maintenanceQuery);
+  const maintenanceSchedules = maintenanceSnapshot.docs.map(doc => ({
+    id: doc.id,
+    ...doc.data()
+  }));
+
+  // Check for maintenance overlaps
+  for (const schedule of maintenanceSchedules) {
+    const maintStart = schedule.startDate;
+    const maintEnd = schedule.endDate;
+
+    // Check if the reservation date falls within the maintenance period
+    const dateInRange = (isoDate >= maintStart && isoDate <= maintEnd);
+
+    if (dateInRange) {
+      // If it's a quick fix (hours), check time overlap
+      if (schedule.durationType === 'hours' && schedule.isQuickFix && isoDate === maintStart) {
+        const maintStartTime = toMinutes(schedule.startTime || '08:00');
+        const maintEndTime = maintStartTime + (schedule.durationHours || 2) * 60;
+
+        const hasTimeOverlap = (newStart < maintEndTime && newEnd > maintStartTime);
+
+        if (hasTimeOverlap) {
+          const endTimeStr = `${Math.floor(maintEndTime / 60).toString().padStart(2, '0')}:${(maintEndTime % 60).toString().padStart(2, '0')}`;
+          throw new Error(
+            `Maintenance conflict: This room is scheduled for maintenance from ${schedule.startTime || '08:00'} to ${endTimeStr} on this date. Reason: "${schedule.reason}".`
+          );
+        }
+      } else {
+        // Multi-day maintenance blocks the entire day
+        throw new Error(
+          `Maintenance conflict: This room is under maintenance from ${maintStart} to ${maintEnd}. Reason: "${schedule.reason}".`
+        );
+      }
+    }
+  }
+}
+
+/**
+ * Get approved reservations for a specific room
+ * Useful for displaying schedules
+ */
+export async function fetchApprovedReservationsForRoom(roomId) {
+  if (!roomId) return [];
+
+  const q = query(
+    reservationsCollection(),
+    where('roomId', '==', roomId),
+    where('status', '==', RESERVATION_STATUS.APPROVED),
+    orderBy('dateOfActivity', 'asc')
+  );
+
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map(mapReservationDoc);
+}
+
+/**
+ * Subscribe to approved reservations for a specific room
+ */
+export function subscribeApprovedReservationsForRoom(roomId, onData, onError) {
+  if (!roomId) {
+    onData([]);
+    return () => {};
+  }
+
+  const q = query(
+    reservationsCollection(),
+    where('roomId', '==', roomId),
+    where('status', '==', RESERVATION_STATUS.APPROVED),
+    orderBy('dateOfActivity', 'asc')
+  );
+
+  return onSnapshot(
+    q,
+    (snap) => onData(snap.docs.map(mapReservationDoc)),
+    onError
+  );
 }
