@@ -16,7 +16,7 @@ import BuildingDetails from './pages/BuildingDetails';
 import RoomDetails from './pages/RoomDetails';
 import NonAcademicRequestDetails from './pages/NonAcademicRequestDetails';
 import AcademicRequestDetails from './pages/AcademicRequestDetails';
-import CourseScheduling from './pages/CourseScheduling';
+import CourseScheduling from './pages/CourseSchedulingNew';
 import RoomAvailability from './pages/RoomAvailability';
 import RoomFinder from './pages/RoomFinder';
 import ScheduleHistory from './pages/ScheduleHistory';
@@ -25,6 +25,9 @@ import Reports from './pages/Reports';
 import SystemAdministration from './pages/SystemAdministration';
 import ApprovalWorkflowManagement from './pages/ApprovalWorkflowManagement';
 import MaintenanceDashboard from './pages/MaintenanceDashboard';
+import CollegeInventory from './pages/CollegeInventory';
+import TeachersDirectory from './pages/TeachersDirectory';
+import CourseInventory from './pages/CourseInventory';
 
 function RegistrarPage({ children }) {
   return <RegistrarRoute>{children}</RegistrarRoute>;
@@ -81,6 +84,9 @@ export default function App() {
             <Route path="/academic-calendar" element={<RegistrarPage><AcademicCalendar /></RegistrarPage>} />
             <Route path="/reports" element={<RegistrarPage><Reports /></RegistrarPage>} />
             <Route path="/system-administration" element={<RegistrarPage><SystemAdministration /></RegistrarPage>} />
+            <Route path="/college-inventory" element={<RegistrarPage><CollegeInventory /></RegistrarPage>} />
+            <Route path="/teachers" element={<RegistrarPage><TeachersDirectory /></RegistrarPage>} />
+            <Route path="/courses" element={<RegistrarPage><CourseInventory /></RegistrarPage>} />
             <Route path="/building/:id" element={<RegistrarPage><BuildingDetails /></RegistrarPage>} />
             <Route path="/room/:id" element={<RegistrarPage><RoomDetails /></RegistrarPage>} />
             <Route path="/request/:id" element={<RegistrarPage><NonAcademicRequestDetails /></RegistrarPage>} />

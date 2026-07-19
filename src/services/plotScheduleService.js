@@ -2,6 +2,7 @@ import {
   collection,
   doc,
   getDoc,
+  getDocs,
   onSnapshot,
   setDoc,
   updateDoc,
@@ -325,4 +326,195 @@ export function validateScheduleHours(startHour, endHour) {
   }
   const clamped = clampScheduleHours(startHour, endHour);
   return { valid: true, startHour: clamped.start, endHour: clamped.end };
+}
+
+/**
+ * NEW FUNCTIONS FOR PER-DEAN, PER-SECTION COURSE SCHEDULING
+ */
+
+// Collection path for dean's section schedules
+function deanSectionEntriesRef(deanUid, section) {
+  return collection(
+    db, 
+    COLLECTIONS.USERS, 
+    deanUid, 
+    'course_schedules', 
+    section, 
+    'entries'
+  );
+}
+
+/**
+ * Subscribe to plot entries for a specific dean and section
+ * For regular schedule: returns all entries regardless of semester (weekly basis)
+ * For exam schedule: filters by semester, scheduleMode, and optionally examPeriod
+ */
+export function subscribePlotEntriesForDeanSection(deanUid, section, semester, scheduleMode, examPeriod, onData, onError) {
+  if (!deanUid || !section) {
+    onData([]);
+    return () => {};
+  }
+
+  let q;
+  
+  if (scheduleMode === 'exam') {
+    // Exam schedule: filter by semester, scheduleMode, and examPeriod
+    if (examPeriod) {
+      q = query(
+        deanSectionEntriesRef(deanUid, section),
+        where('semester', '==', Number(semester)),
+        where('scheduleMode', '==', 'exam'),
+        where('examPeriod', '==', examPeriod),
+        orderBy('createdAt', 'desc')
+      );
+    } else {
+      q = query(
+        deanSectionEntriesRef(deanUid, section),
+        where('semester', '==', Number(semester)),
+        where('scheduleMode', '==', 'exam'),
+        orderBy('createdAt', 'desc')
+      );
+    }
+  } else {
+    // Regular schedule: get all regular entries (weekly basis, no semester filter)
+    q = query(
+      deanSectionEntriesRef(deanUid, section),
+      where('scheduleMode', '==', 'regular'),
+      orderBy('createdAt', 'desc')
+    );
+  }
+
+  return onSnapshot(
+    q,
+    (snap) => onData(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
+    onError
+  );
+}
+
+/**
+ * Add a plot entry for a specific dean and section
+ */
+export async function addPlotEntryForSection(deanUid, section, entry) {
+  const ref = doc(deanSectionEntriesRef(deanUid, section));
+  await setDoc(ref, {
+    ...entry,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+  return ref.id;
+}
+
+/**
+ * Update a plot entry for a specific dean and section
+ */
+export async function updatePlotEntryForSection(deanUid, section, entryId, patch) {
+  const ref = doc(deanSectionEntriesRef(deanUid, section), entryId);
+  await updateDoc(ref, {
+    ...patch,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+/**
+ * Delete a plot entry for a specific dean and section
+ */
+export async function deletePlotEntryForSection(deanUid, section, entryId) {
+  const ref = doc(deanSectionEntriesRef(deanUid, section), entryId);
+  await deleteDoc(ref);
+}
+
+/**
+ * Get all sections for a specific dean
+ */
+export async function getDeanSections(deanUid) {
+  if (!deanUid) return [];
+  
+  try {
+    const schedulesRef = collection(db, COLLECTIONS.USERS, deanUid, 'course_schedules');
+    const snapshot = await getDocs(schedulesRef);
+    
+    // Get unique sections (collection IDs)
+    const sections = snapshot.docs.map(doc => doc.id);
+    return sections.sort(); // Sort alphabetically
+  } catch (error) {
+    console.error('Error fetching dean sections:', error);
+    return [];
+  }
+}
+
+/**
+ * Subscribe to sections for a specific dean
+ * Returns section objects with metadata (name, yearLevel)
+ */
+export function subscribeDeanSections(deanUid, onData, onError) {
+  if (!deanUid) {
+    onData([]);
+    return () => {};
+  }
+
+  const schedulesRef = collection(db, COLLECTIONS.USERS, deanUid, 'course_schedules');
+  
+  return onSnapshot(
+    schedulesRef,
+    (snapshot) => {
+      const sections = snapshot.docs.map(doc => ({
+        id: doc.id,
+        name: doc.id, // Section name is the document ID
+        ...doc.data(), // Includes yearLevel, createdAt, etc.
+      }));
+      // Sort by year level first, then by name
+      sections.sort((a, b) => {
+        const yearA = a.yearLevel || '';
+        const yearB = b.yearLevel || '';
+        if (yearA !== yearB) {
+          return yearA.localeCompare(yearB);
+        }
+        return a.name.localeCompare(b.name);
+      });
+      onData(sections);
+    },
+    onError
+  );
+}
+
+/**
+ * Create a new section for a dean
+ */
+export async function createDeanSection(deanUid, sectionName, yearLevel) {
+  if (!deanUid || !sectionName) {
+    throw new Error('Dean UID and section name are required.');
+  }
+
+  // Create the section document directly in course_schedules
+  const sectionRef = doc(db, COLLECTIONS.USERS, deanUid, 'course_schedules', sectionName);
+  
+  await setDoc(sectionRef, {
+    sectionName,
+    yearLevel: yearLevel || '',
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+
+  return sectionName;
+}
+
+/**
+ * Delete a section for a dean (and all its entries)
+ */
+export async function deleteDeanSection(deanUid, sectionName) {
+  if (!deanUid || !sectionName) {
+    throw new Error('Dean UID and section name are required.');
+  }
+
+  // Get all entries in this section
+  const entriesRef = deanSectionEntriesRef(deanUid, sectionName);
+  const snapshot = await getDocs(entriesRef);
+
+  // Delete all entries
+  const deletePromises = snapshot.docs.map(doc => deleteDoc(doc.ref));
+  await Promise.all(deletePromises);
+
+  // Delete the section document itself
+  const sectionRef = doc(db, COLLECTIONS.USERS, deanUid, 'course_schedules', sectionName);
+  await deleteDoc(sectionRef);
 }

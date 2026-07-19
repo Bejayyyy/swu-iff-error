@@ -38,6 +38,7 @@ export default function WeeklyScheduleGrid({
   showControls = true,
   readOnly = false,
   canPlot = false,
+  showDayDates = true, // New prop to control date display
   onAddBlock,
   onSlotSelect,
   onEditBlock,
@@ -139,7 +140,7 @@ export default function WeeklyScheduleGrid({
                 className="px-4 py-1.5 text-xs font-bold flex items-center gap-1.5 transition-all"
                 style={scheduleTab === 'exam' ? { background: '#800000', color: 'white', borderRadius: 10 } : { background: 'transparent', color: '#2B3235', borderRadius: 10 }}
               >
-                <Calendar size={12} /> Exam Calendar
+                <Calendar size={12} /> Exam Schedule
               </button>
             </div>
           )}
@@ -171,20 +172,25 @@ export default function WeeklyScheduleGrid({
               </button>
             ))}
           </div>
-          <button type="button" className="px-3 py-1.5 rounded-lg text-xs font-semibold text-gray-500 border border-gray-200 hover:bg-gray-50 flex items-center gap-1 disabled:opacity-40" onClick={onPrevWeek} disabled={!canPrevWeek}>
-            <ChevronLeft size={12} /> Previous Week
-          </button>
-          <span className="text-xs font-semibold text-gray-400">{weekLabel}</span>
-          <button type="button" className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 hover:bg-gray-50 flex items-center gap-1 disabled:opacity-40" style={{ color: '#7A0808' }} onClick={onNextWeek} disabled={!canNextWeek}>
-            Next Week <ChevronRight size={12} />
-          </button>
+          {/* Week navigation - only show for exam schedule */}
+          {scheduleTab === 'exam' && onPrevWeek && onNextWeek && (
+            <>
+              <button type="button" className="px-3 py-1.5 rounded-lg text-xs font-semibold text-gray-500 border border-gray-200 hover:bg-gray-50 flex items-center gap-1 disabled:opacity-40" onClick={onPrevWeek} disabled={!canPrevWeek}>
+                <ChevronLeft size={12} /> Previous Week
+              </button>
+              <span className="text-xs font-semibold text-gray-400">{weekLabel}</span>
+              <button type="button" className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 hover:bg-gray-50 flex items-center gap-1 disabled:opacity-40" style={{ color: '#7A0808' }} onClick={onNextWeek} disabled={!canNextWeek}>
+                Next Week <ChevronRight size={12} />
+              </button>
+            </>
+          )}
         </div>
       )}
 
       {semesterRangeLabel && (
         <p className="text-xs font-semibold mb-2" style={{ color: '#2B3235', opacity: 0.75 }}>
-          Semester {semester}: {semesterRangeLabel}
-          {scheduleTab === 'exam' ? ' · Exam calendar mode' : ' · Regular schedule mode'}
+          {semesterRangeLabel}
+          {scheduleTab === 'exam' ? ' · Exam schedule mode' : ' · Regular schedule mode'}
         </p>
       )}
 
@@ -225,7 +231,9 @@ export default function WeeklyScheduleGrid({
               return (
                 <div key={day} className="py-2 text-center">
                   <p className="text-[10px] font-bold uppercase text-gray-400">{day}</p>
-                  <p className="text-sm font-black" style={{ color: disabled ? '#9CA3AF' : '#2B3235' }}>{dayDates[i]}</p>
+                  {showDayDates && (
+                    <p className="text-sm font-black" style={{ color: disabled ? '#9CA3AF' : '#2B3235' }}>{dayDates[i]}</p>
+                  )}
                   {disabled && status?.reason && (
                     <p className="text-[8px] font-bold leading-tight mt-0.5 px-1 text-red-700">{status.reason}</p>
                   )}

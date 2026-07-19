@@ -1,22 +1,32 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { X } from 'lucide-react';
 import { INSTITUTIONAL_EMAIL_DOMAIN } from '../../firebase/constants';
-import { COLLEGE_OPTIONS, requiresCollege, requiresDepartment } from '../../constants/colleges';
+import { requiresCollege, requiresDepartment } from '../../constants/colleges';
 import PermissionCheckboxGrid from '../admin/PermissionCheckboxGrid';
 import { getRoleDefinition } from '../../constants/rolePermissions';
+import { subscribeColleges } from '../../services/collegeService';
 
 export default function AddUserModal({ onClose, onSave, roleOptions = [], roleDefinitions = {} }) {
+  const [colleges, setColleges] = useState([]);
   const [form, setForm] = useState({
     name: '',
     email: '',
-    department: '',
-    college: '', // Added college field
+    department: '', // This will now be the college (for roles that need it)
+    college: '', // Keep for backward compatibility
     role: roleOptions[0]?.value || 'dean',
     useCustomAccess: false,
     permissions: [],
     navKeys: [],
   });
   const [error, setError] = useState('');
+
+  // Subscribe to colleges from Firestore
+  useEffect(() => {
+    return subscribeColleges(
+      (data) => setColleges(data),
+      (err) => console.error('Error loading colleges:', err)
+    );
+  }, []);
 
   useEffect(() => {
     if (form.useCustomAccess) return;
@@ -31,7 +41,10 @@ export default function AddUserModal({ onClose, onSave, roleOptions = [], roleDe
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
   const showCollegeField = useMemo(() => requiresCollege(form.role), [form.role]);
-  const showDepartmentField = useMemo(() => requiresDepartment(form.role), [form.role]);
+  const showDepartmentField = useMemo(() => {
+    // Only show department field for GSD and Student Life (they're not colleges)
+    return form.role === 'gsd' || form.role === 'student-life';
+  }, [form.role]);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -45,12 +58,19 @@ export default function AddUserModal({ onClose, onSave, roleOptions = [], roleDe
       setError('College is required for this role.');
       return;
     }
+    if (showDepartmentField && !form.department.trim()) {
+      setError('Department is required for this role.');
+      return;
+    }
     try {
-      await onSave({
+      // For college-based roles, store in department field for backward compatibility
+      const saveData = {
         ...form,
+        department: showCollegeField ? form.college : form.department,
         permissions: form.useCustomAccess ? form.permissions : [],
         navKeys: form.useCustomAccess ? form.navKeys : [],
-      });
+      };
+      await onSave(saveData);
       onClose();
     } catch (err) {
       setError(err.message || 'Failed to add user.');
@@ -92,7 +112,10 @@ export default function AddUserModal({ onClose, onSave, roleOptions = [], roleDe
               {showDepartmentField && (
                 <div>
                   <label className="form-label">Department</label>
-                  <input className="form-input" value={form.department} onChange={(e) => set('department', e.target.value)} placeholder="e.g. Information Technology" />
+                  <input className="form-input" value={form.department} onChange={(e) => set('department', e.target.value)} placeholder="e.g. GSD, Student Life" />
+                  <p className="text-xs text-gray-500 mt-1">
+                    For non-college administrative offices (GSD, Student Life)
+                  </p>
                 </div>
               )}
               <div className={showDepartmentField ? '' : 'col-span-2'}>
@@ -103,7 +126,7 @@ export default function AddUserModal({ onClose, onSave, roleOptions = [], roleDe
                   onChange={(e) => {
                     const newRole = e.target.value;
                     set('role', newRole);
-                    // Clear department and college if switching to GSD or Student Life
+                    // Clear department and college if switching roles
                     if (!requiresDepartment(newRole)) {
                       set('department', '');
                     }
@@ -126,12 +149,18 @@ export default function AddUserModal({ onClose, onSave, roleOptions = [], roleDe
                 </label>
                 <select className="form-input" value={form.college} onChange={(e) => set('college', e.target.value)} required>
                   <option value="">Select College</option>
-                  {COLLEGE_OPTIONS.map((college) => (
-                    <option key={college.value} value={college.value}>{college.label}</option>
+                  {colleges.map((college) => (
+                    <option key={college.id} value={college.code}>
+                      {college.name} ({college.code})
+                    </option>
                   ))}
                 </select>
                 <p className="text-xs text-gray-500 mt-1">
-                  This determines which dean will approve this user's reservations
+                  {colleges.length === 0 ? (
+                    <span className="text-orange-600">⚠️ No colleges available. Add colleges in College Inventory first.</span>
+                  ) : (
+                    'This determines which college this user belongs to for scheduling and approvals'
+                  )}
                 </p>
               </div>
             )}

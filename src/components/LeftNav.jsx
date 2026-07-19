@@ -17,14 +17,18 @@ const NAV_ICONS = {
   '/dashboard': LayoutDashboard,
   '/approvals': CheckSquare,
   '/course-scheduling': Calendar,
+  '/teachers': GraduationCap,
+  '/courses': BookOpen,
   '/room-availability': BookOpen,
   '/room-finder': Search,
   '/schedule-history': Clock,
   '/building-management': Building2,
   '/academic-calendar': GraduationCap,
   '/reports': BarChart2,
+  '/college-inventory': GraduationCap,
   '/system-administration': Settings,
   '/approval-workflow': GitBranch,
+  '/maintenance-dashboard': Building2,
 };
 
 export default function LeftNav({

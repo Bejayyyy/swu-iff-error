@@ -6,10 +6,15 @@ export function parseDateOnly(value) {
 }
 
 export function formatDisplayDate(value) {
-  if (!value) return 'dd/mm/yyyy';
+  if (!value) return 'Month Day, Year';
   const dt = parseDateOnly(value);
   if (!dt) return value;
-  return dt.toLocaleDateString('en-GB');
+  // Format as "January 1, 2025"
+  return dt.toLocaleDateString('en-US', { 
+    year: 'numeric', 
+    month: 'long', 
+    day: 'numeric' 
+  });
 }
 
 export function isDateInRange(dateStr, startStr, endStr) {
@@ -159,9 +164,50 @@ export function getAllExamDates(examPeriods, semester) {
   return dates;
 }
 
+/**
+ * Get exam dates for a specific period and student category
+ */
+export function getExamDatesForPeriod(examPeriods, semester, period, studentCategory) {
+  const sem = examPeriods?.[semester] || examPeriods?.[Number(semester)];
+  if (!sem || !period) return new Set();
+  
+  const level = studentCategory === 'freshmen' ? 'fr' : 'up';
+  const range = sem[period]?.[level];
+  
+  const dates = new Set();
+  if (range?.start && range?.end) {
+    enumerateDatesInRange(range.start, range.end).forEach((d) => dates.add(d));
+  }
+  return dates;
+}
+
 /** regular = class days; exam = exam-period days only */
-export function getPlotDayStatus(dateStr, calendarData, semester, scheduleMode = 'regular') {
+export function getPlotDayStatus(dateStr, calendarData, semester, scheduleMode = 'regular', examPeriod = null, studentCategory = null) {
   const { config, holidays = [], noClassPeriods = [], examPeriods } = calendarData || {};
+  
+  // For exam mode with specific period, use exam period dates instead of semester bounds
+  if (scheduleMode === 'exam' && examPeriod && studentCategory) {
+    const examDates = getExamDatesForPeriod(examPeriods, semester, examPeriod, studentCategory);
+    
+    if (examDates.size === 0) {
+      return { disabled: true, reason: `No dates configured for ${examPeriod.toUpperCase()}` };
+    }
+    
+    if (!examDates.has(dateStr)) {
+      return { disabled: true, reason: `Not in ${examPeriod.toUpperCase()} exam period` };
+    }
+    
+    // Check holidays and no-class periods
+    const holiday = findHolidayOnDate(dateStr, holidays);
+    if (holiday) return { disabled: true, reason: `Holiday: ${holiday.name}` };
+
+    const noClass = findNoClassOnDate(dateStr, noClassPeriods);
+    if (noClass) return { disabled: true, reason: `No-class: ${noClass.reason}` };
+    
+    return { disabled: false, reason: null };
+  }
+  
+  // Original logic for regular schedule or exam without specific period
   const bounds = getSemesterBounds(config, semester);
 
   if (bounds.start && bounds.end && !isDateInRange(dateStr, bounds.start, bounds.end)) {

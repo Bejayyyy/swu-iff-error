@@ -360,7 +360,7 @@ export default function SystemAdministration() {
                     <th className="py-3 px-4 font-bold text-xs uppercase tracking-wider" style={{ color: '#2B3235' }}>Email</th>
                     <th className="py-3 px-4 font-bold text-xs uppercase tracking-wider" style={{ color: '#2B3235' }}>Role</th>
                     <th className="py-3 px-4 font-bold text-xs uppercase tracking-wider" style={{ color: '#2B3235' }}>Access</th>
-                    <th className="py-3 px-4 font-bold text-xs uppercase tracking-wider" style={{ color: '#2B3235' }}>Department</th>
+                    <th className="py-3 px-4 font-bold text-xs uppercase tracking-wider" style={{ color: '#2B3235' }}>College/Dept</th>
                     <th className="py-3 px-4 font-bold text-xs uppercase tracking-wider" style={{ color: '#2B3235' }}>Status</th>
                     <th className="py-3 px-4 font-bold text-xs uppercase tracking-wider w-12" style={{ color: '#2B3235' }} />
                   </tr>

@@ -99,7 +99,7 @@ service cloud.firestore {
           isDeveloper()
           && isPhinmaedEmail()
           && request.resource.data.role == 'registrar'
-          && request.resource.data.email.matches('.*@phinmaed\\.com$')
+          && request.resource.data.email.matches('.*@phinmaedcom$')
           && request.resource.data.status in ['active', 'inactive']
         )
         || (
@@ -146,6 +146,21 @@ service cloud.firestore {
       allow delete: if (isDeveloper() || isRegistrar()) 
         && isPhinmaedEmail() 
         && (resource.data.role == 'registrar' || isStaffRoleOrDefined(resource.data.role));
+
+      // Course schedules subcollection - deans can manage their own, registrars can read all
+      match /course_schedules/{section} {
+        allow read: if isMainRole() && isPhinmaedEmail();
+        allow write: if isPhinmaedEmail() && (
+          isRegistrar() || (isDean() && callerIsSelf(userId))
+        );
+
+        match /entries/{entryId} {
+          allow read: if isMainRole() && isPhinmaedEmail();
+          allow write: if isPhinmaedEmail() && (
+            isRegistrar() || (isDean() && callerIsSelf(userId))
+          );
+        }
+      }
     }
 
     match /registrar_management/{registrarId} {
@@ -300,6 +315,25 @@ service cloud.firestore {
         && resource.data.recipientUid == request.auth.uid
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRead', 'readAt']);
       allow delete: if isRegistrar() && isPhinmaedEmail();
+    }
+
+    // Colleges inventory - Registrar can manage, all staff can read
+    match /colleges/{collegeId} {
+      allow read: if isMainRole() && isPhinmaedEmail();
+      allow create, update, delete: if isRegistrar() && isPhinmaedEmail();
+    }
+
+    // Courses - Registrar can manage, Deans can read and assign teachers for their college courses
+    match /courses/{courseId} {
+      allow read: if isMainRole() && isPhinmaedEmail();
+      allow create, update, delete: if isRegistrar() && isPhinmaedEmail();
+      allow update: if isDean() && isPhinmaedEmail() 
+        && userDocExists()
+        && (
+          resource.data.collegeCode == userDoc().data.college
+          || resource.data.collegeCode == userDoc().data.department
+        )
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['assignedTeacherUid', 'assignedTeacherName', 'assignedTeacherEmail', 'updatedAt']);
     }
 
     // Registrar operational data (scheduling, etc.) — not writable by Developers.

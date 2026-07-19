@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { X } from 'lucide-react';
 import { USER_STATUS, INSTITUTIONAL_EMAIL_DOMAIN } from '../../firebase/constants';
-import { COLLEGE_OPTIONS, requiresCollege, requiresDepartment } from '../../constants/colleges';
+import { requiresCollege, requiresDepartment } from '../../constants/colleges';
 import PermissionCheckboxGrid from '../admin/PermissionCheckboxGrid';
 import { getRoleDefinition } from '../../constants/rolePermissions';
+import { subscribeColleges } from '../../services/collegeService';
 
 export default function EditUserModal({
   user,
@@ -13,6 +14,8 @@ export default function EditUserModal({
   onSave,
   saving = false,
 }) {
+  const [colleges, setColleges] = useState([]);
+  
   const roleOptions = useMemo(
     () => roleDefinitionsList.map((r) => ({ value: r.id, label: r.label || r.id })),
     [roleDefinitionsList],
@@ -20,9 +23,9 @@ export default function EditUserModal({
 
   const [form, setForm] = useState({
     name: user?.name || '',
-    email: user?.email || '', // Added email editing
+    email: user?.email || '',
     department: user?.department || '',
-    college: user?.college || '',
+    college: user?.college || user?.department || '', // Initialize college from department for backward compatibility
     roleValue: user?.roleValue || roleOptions[0]?.value || 'dean',
     status: user?.status === 'Inactive' ? USER_STATUS.INACTIVE : USER_STATUS.ACTIVE,
     useCustomAccess: Boolean(user?.permissions?.length || user?.navKeys?.length),
@@ -31,8 +34,19 @@ export default function EditUserModal({
   });
   const [error, setError] = useState('');
 
+  // Subscribe to colleges from Firestore
+  useEffect(() => {
+    return subscribeColleges(
+      (data) => setColleges(data),
+      (err) => console.error('Error loading colleges:', err)
+    );
+  }, []);
+
   const showCollegeField = requiresCollege(form.roleValue);
-  const showDepartmentField = requiresDepartment(form.roleValue);
+  const showDepartmentField = useMemo(() => {
+    // Only show department field for GSD and Student Life (they're not colleges)
+    return form.roleValue === 'gsd' || form.roleValue === 'student_life';
+  }, [form.roleValue]);
 
   useEffect(() => {
     if (form.useCustomAccess) return;
@@ -65,19 +79,25 @@ export default function EditUserModal({
       setError('College is required for this role.');
       return;
     }
+    if (showDepartmentField && !form.department.trim()) {
+      setError('Department is required for this role.');
+      return;
+    }
     try {
-      await onSave({
+      // For college-based roles, store in department field for backward compatibility
+      const saveData = {
         uid: user.uid,
         name: form.name.trim(),
-        email: form.email.trim(), // Include email update
-        department: form.department.trim(),
-        college: form.college.trim(),
+        email: form.email.trim(),
+        department: showCollegeField ? form.college : form.department.trim(),
+        college: showCollegeField ? form.college : '',
         roleValue: form.roleValue,
         status: form.status,
         permissions: form.useCustomAccess ? form.permissions : [],
         navKeys: form.useCustomAccess ? form.navKeys : [],
         useCustomAccess: form.useCustomAccess,
-      });
+      };
+      await onSave(saveData);
       onClose();
     } catch (err) {
       setError(err.message || 'Failed to update user.');
@@ -128,7 +148,15 @@ export default function EditUserModal({
               {showDepartmentField && (
                 <div>
                   <label className="form-label">Department</label>
-                  <input className="form-input" value={form.department} onChange={(e) => set('department', e.target.value)} />
+                  <input 
+                    className="form-input" 
+                    value={form.department} 
+                    onChange={(e) => set('department', e.target.value)} 
+                    placeholder="e.g. GSD, Student Life"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    For non-college administrative offices (GSD, Student Life)
+                  </p>
                 </div>
               )}
               <div className={showDepartmentField ? '' : 'col-span-2'}>
@@ -139,7 +167,7 @@ export default function EditUserModal({
                   onChange={(e) => {
                     const newRole = e.target.value;
                     set('roleValue', newRole);
-                    // Clear department and college if switching to GSD or Student Life
+                    // Clear department and college if switching roles
                     if (!requiresDepartment(newRole)) {
                       set('department', '');
                     }
@@ -160,10 +188,19 @@ export default function EditUserModal({
                 <label className="form-label">College <span className="text-red-600">*</span></label>
                 <select className="form-input" value={form.college} onChange={(e) => set('college', e.target.value)} required>
                   <option value="">Select College</option>
-                  {COLLEGE_OPTIONS.map((college) => (
-                    <option key={college.value} value={college.value}>{college.label}</option>
+                  {colleges.map((college) => (
+                    <option key={college.id} value={college.code}>
+                      {college.name} ({college.code})
+                    </option>
                   ))}
                 </select>
+                <p className="text-xs text-gray-500 mt-1">
+                  {colleges.length === 0 ? (
+                    <span className="text-orange-600">⚠️ No colleges available. Add colleges in College Inventory first.</span>
+                  ) : (
+                    'This determines which college this user belongs to for scheduling and approvals'
+                  )}
+                </p>
               </div>
             )}
 
