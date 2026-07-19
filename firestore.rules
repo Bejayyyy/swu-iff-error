@@ -150,14 +150,14 @@ service cloud.firestore {
       // Course schedules subcollection - deans can manage their own, registrars can read all
       match /course_schedules/{section} {
         allow read: if isMainRole() && isPhinmaedEmail();
-        allow write: if isPhinmaedEmail() && (
-          isRegistrar() || (isDean() && callerIsSelf(userId))
+        allow create, update, delete: if isPhinmaedEmail() && (
+          isRegistrar() || (hasRole('dean') && callerIsSelf(userId))
         );
 
         match /entries/{entryId} {
           allow read: if isMainRole() && isPhinmaedEmail();
-          allow write: if isPhinmaedEmail() && (
-            isRegistrar() || (isDean() && callerIsSelf(userId))
+          allow create, update, delete: if isPhinmaedEmail() && (
+            isRegistrar() || (hasRole('dean') && callerIsSelf(userId))
           );
         }
       }

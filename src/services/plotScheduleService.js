@@ -282,8 +282,25 @@ export async function completePlotTurn(plotId, profile) {
 }
 
 export function entriesToGridBlocks(entries, weekDates = []) {
-  return (entries || [])
-    .filter((e) => !weekDates.length || weekDates.includes(e.date))
+  console.log('entriesToGridBlocks called with entries:', entries.length, 'weekDates:', weekDates);
+  
+  const blocks = (entries || [])
+    .filter((e) => {
+      // For regular schedule (weekday-0, weekday-1, etc.), we don't filter by date
+      // because entries use day names like "Monday" not "weekday-0"
+      // Instead, we rely on the day index being valid (0-6)
+      if (!weekDates.length) return true;
+      
+      // For exam schedule or when we have actual dates, check if date matches
+      const isWeekdayFormat = weekDates[0]?.startsWith('weekday-');
+      if (isWeekdayFormat) {
+        // Regular schedule: don't filter by date, let day index handle it
+        return true;
+      }
+      
+      // Exam schedule: filter by actual dates
+      return weekDates.includes(e.date);
+    })
     .map((e) => {
       const dayIndex = weekDates.length ? weekDates.indexOf(e.date) : (e.day ?? 0);
       return {
@@ -300,7 +317,10 @@ export function entriesToGridBlocks(entries, weekDates = []) {
         scheduleMode: e.scheduleMode || 'regular',
       };
     })
-    .filter((e) => e.day >= 0);
+    .filter((e) => e.day >= 0 && e.day <= 6); // Only include valid days (0-6)
+  
+  console.log('entriesToGridBlocks result:', blocks.length, 'blocks');
+  return blocks;
 }
 
 export function parseTimeToHour(timeStr) {
@@ -355,6 +375,14 @@ export function subscribePlotEntriesForDeanSection(deanUid, section, semester, s
     return () => {};
   }
 
+  console.log('subscribePlotEntriesForDeanSection called with:', {
+    deanUid,
+    section,
+    semester,
+    scheduleMode,
+    examPeriod
+  });
+
   let q;
   
   if (scheduleMode === 'exam') {
@@ -376,18 +404,35 @@ export function subscribePlotEntriesForDeanSection(deanUid, section, semester, s
       );
     }
   } else {
-    // Regular schedule: get all regular entries (weekly basis, no semester filter)
+    // Regular schedule: get all entries with scheduleMode 'regular' OR no scheduleMode field
+    // Since we can't use OR queries easily, we'll get all entries and filter in memory
     q = query(
       deanSectionEntriesRef(deanUid, section),
-      where('scheduleMode', '==', 'regular'),
       orderBy('createdAt', 'desc')
     );
   }
 
   return onSnapshot(
     q,
-    (snap) => onData(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
-    onError
+    (snap) => {
+      const allEntries = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      console.log('Raw entries from Firestore:', allEntries);
+      
+      // For regular schedule, filter to only include regular entries
+      let filteredEntries = allEntries;
+      if (scheduleMode === 'regular') {
+        filteredEntries = allEntries.filter(entry => 
+          !entry.scheduleMode || entry.scheduleMode === 'regular'
+        );
+      }
+      
+      console.log('Filtered entries:', filteredEntries);
+      onData(filteredEntries);
+    },
+    (err) => {
+      console.error('Error in subscribePlotEntriesForDeanSection:', err);
+      onError(err);
+    }
   );
 }
 
@@ -517,4 +562,87 @@ export async function deleteDeanSection(deanUid, sectionName) {
   // Delete the section document itself
   const sectionRef = doc(db, COLLECTIONS.USERS, deanUid, 'course_schedules', sectionName);
   await deleteDoc(sectionRef);
+}
+
+/**
+ * Subscribe to all plot entries for a specific room code
+ * Used by RoomScheduleViewer to show room availability
+ * 
+ * NOTE: This currently only shows schedules from the CURRENT dean's sections.
+ * For a full implementation across all deans, consider:
+ * - Creating a separate room_schedules collection
+ * - Using Cloud Functions to aggregate room schedules
+ * - Or implementing a more complex multi-user query
+ */
+export function subscribePlotEntriesForRoom(roomCode, semester, scheduleMode, deanUid, onData, onError) {
+  if (!roomCode || !deanUid) {
+    onData([]);
+    return () => {};
+  }
+
+  console.log('subscribePlotEntriesForRoom called with:', {
+    roomCode,
+    semester,
+    scheduleMode,
+    deanUid
+  });
+
+  // Query the current dean's schedules across all sections
+  // This is a simplified version - in production you'd want to aggregate across all deans
+  const userRef = doc(db, COLLECTIONS.USERS, deanUid);
+  const schedulesColl = collection(userRef, 'course_schedules');
+
+  // We need to query all sections for this dean to find entries with this room
+  // Since we can't query subcollections directly, we'll need to aggregate in the client
+  
+  const unsubscribers = [];
+  const sectionData = new Map(); // Track entries from each section
+
+  // First, get all sections for this dean
+  getDocs(schedulesColl).then(sectionsSnapshot => {
+    console.log(`Found ${sectionsSnapshot.docs.length} sections for dean`);
+    
+    sectionsSnapshot.docs.forEach(sectionDoc => {
+      const sectionName = sectionDoc.id;
+      const entriesRef = collection(userRef, 'course_schedules', sectionName, 'entries');
+      
+      // Subscribe to entries in this section that match the room
+      const q = query(
+        entriesRef,
+        where('roomCode', '==', roomCode),
+        where('scheduleMode', '==', scheduleMode)
+      );
+
+      const unsubscribe = onSnapshot(
+        q,
+        (snapshot) => {
+          const entries = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+          console.log(`Section ${sectionName} has ${entries.length} entries for room ${roomCode}`);
+          
+          // Store entries from this section
+          sectionData.set(sectionName, entries);
+          
+          // Aggregate all entries from all sections
+          const allEntries = Array.from(sectionData.values()).flat();
+          console.log(`Total entries for room ${roomCode}: ${allEntries.length}`);
+          onData(allEntries);
+        },
+        (err) => {
+          console.error(`Error subscribing to section ${sectionName}:`, err);
+          if (onError) onError(err);
+        }
+      );
+      
+      unsubscribers.push(unsubscribe);
+    });
+  }).catch(err => {
+    console.error('Error getting sections:', err);
+    if (onError) onError(err);
+  });
+
+  // Return a function that unsubscribes from all sections
+  return () => {
+    console.log('Unsubscribing from all room schedule listeners');
+    unsubscribers.forEach(unsub => unsub());
+  };
 }

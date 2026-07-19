@@ -6,6 +6,7 @@ import { ROLES } from '../firebase/constants';
 import { useAcademicCalendar } from '../hooks/useAcademicCalendar';
 import WeeklyScheduleGrid from '../components/scheduling/WeeklyScheduleGrid';
 import AddPlotEntryModal from '../components/modals/AddPlotEntryModal';
+import AddPlotEntryModalEnhanced from '../components/modals/AddPlotEntryModalEnhanced';
 import LoadingModal from '../components/modals/LoadingModal';
 import NotificationModal from '../components/modals/NotificationModal';
 import { addDays } from '../constants/scheduleGrid';
@@ -385,11 +386,18 @@ export default function CourseSchedulingNew() {
   const handleSaveEntry = async (payload) => {
     if (!selectedDeanUid || !selectedSection) return;
     
+    console.log('handleSaveEntry called with payload:', payload);
+    console.log('Selected dean UID:', selectedDeanUid);
+    console.log('Selected section:', selectedSection);
+    console.log('Schedule mode:', scheduleTab);
+    
     // For regular schedule, use day index (0-6) instead of actual date
     // For exam schedule, use actual date
     const dayIdx = scheduleTab === 'regular' 
       ? WEEKDAYS.indexOf(payload.date) // Use weekday name for regular
       : weekDates.indexOf(payload.date); // Use actual date for exam
+    
+    console.log('Calculated dayIdx:', dayIdx, 'from date:', payload.date);
     
     // Only check date status for exam schedule
     if (scheduleTab === 'exam') {
@@ -419,11 +427,18 @@ export default function CourseSchedulingNew() {
       plottedByEmail: normalizeEmail(profile?.email),
     };
 
+    console.log('Entry to be saved:', entry);
+
     if (entryModal?.mode === 'edit' && entryModal.id) {
+      console.log('Updating entry:', entryModal.id);
       await updatePlotEntryForSection(selectedDeanUid, selectedSection, entryModal.id, entry);
     } else {
-      await addPlotEntryForSection(selectedDeanUid, selectedSection, entry);
+      console.log('Adding new entry');
+      const newId = await addPlotEntryForSection(selectedDeanUid, selectedSection, entry);
+      console.log('New entry ID:', newId);
     }
+    
+    console.log('Save completed successfully');
   };
 
   const handleDeleteEntry = async (block) => {
@@ -546,7 +561,7 @@ export default function CourseSchedulingNew() {
             <div>
               <label className="block text-[9px] font-bold uppercase text-gray-500 mb-1">School Year</label>
               <select
-                value={activeSchoolYearId}
+                value={activeSchoolYearId || ''}
                 onChange={(e) => setActiveSchoolYearId(e.target.value)}
                 className="px-3 py-2 text-sm font-bold rounded-lg border-2 border-gray-200 focus:border-[#800000] focus:outline-none"
                 style={{ color: '#2B3235' }}
@@ -936,7 +951,23 @@ export default function CourseSchedulingNew() {
         </div>
       </div>
 
-      {entryModal && (
+      {entryModal && canPlot && isDean ? (
+        <AddPlotEntryModalEnhanced
+          key={`${entryModal.mode}-${entryModal.date}-${entryModal.initial?.startTime}-${entryModal.initial?.endTime}`}
+          onClose={() => setEntryModal(null)}
+          onSave={handleSaveEntry}
+          initial={entryModal.initial}
+          date={entryModal.date}
+          dayLabel={entryModal.dayLabel}
+          scheduleMode={scheduleTab}
+          dayBlockReason={entryModalDayStatus?.disabled ? entryModalDayStatus.reason : null}
+          lockTimes={entryModal.lockTimes}
+          deanCollege={selectedDean?.college || selectedDean?.department}
+          deanUid={selectedDeanUid}
+          semester={semester}
+          dayIndex={WEEKDAYS.indexOf(entryModal.date) >= 0 ? WEEKDAYS.indexOf(entryModal.date) : weekDates.indexOf(entryModal.date)}
+        />
+      ) : entryModal ? (
         <AddPlotEntryModal
           key={`${entryModal.mode}-${entryModal.date}-${entryModal.initial?.startTime}-${entryModal.initial?.endTime}`}
           onClose={() => setEntryModal(null)}
@@ -950,7 +981,7 @@ export default function CourseSchedulingNew() {
           dayBlockReason={entryModalDayStatus?.disabled ? entryModalDayStatus.reason : null}
           lockTimes={entryModal.lockTimes}
         />
-      )}
+      ) : null}
 
       {/* Add Section Modal */}
       {showAddSectionModal && (
