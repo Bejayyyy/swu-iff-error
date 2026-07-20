@@ -143,8 +143,14 @@ export default function ApprovalManagement() {
     return typeMatch && statusMatch && dateMatch && searchMatch;
   });
 
-  const academicReqs = roleRequests.filter((r) => r.type === 'academic');
-  const nonAcademicReqs = roleRequests.filter((r) => r.type === 'non-academic');
+  // Separate counts for each section
+  const academicReqs = showSection === 'approvals' 
+    ? roleRequests.filter((r) => r.type === 'academic')
+    : myRequests.filter((r) => r.type === 'academic');
+    
+  const nonAcademicReqs = showSection === 'approvals'
+    ? roleRequests.filter((r) => r.type === 'non-academic')
+    : myRequests.filter((r) => r.type === 'non-academic');
 
   const canCreateAny = canCreateRequestType('academic') || canCreateRequestType('non-academic');
   const subtitle = isRegistrar

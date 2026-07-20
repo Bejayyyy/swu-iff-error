@@ -284,6 +284,13 @@ export async function completePlotTurn(plotId, profile) {
 export function entriesToGridBlocks(entries, weekDates = []) {
   console.log('entriesToGridBlocks called with entries:', entries.length, 'weekDates:', weekDates);
   
+  // Helper function to extract first name from full name
+  const getFirstName = (fullName) => {
+    if (!fullName) return '';
+    const parts = fullName.trim().split(/\s+/);
+    return parts[0] || '';
+  };
+  
   const blocks = (entries || [])
     .filter((e) => {
       // For regular schedule (weekday-0, weekday-1, etc.), we don't filter by date
@@ -309,7 +316,7 @@ export function entriesToGridBlocks(entries, weekDates = []) {
         day: dayIndex >= 0 ? dayIndex : e.day,
         title: e.title || e.subject || 'Untitled',
         course: e.courseCode || e.course || '',
-        instructor: e.instructor || '',
+        instructor: getFirstName(e.instructor || ''), // Extract first name only
         start: e.startHour,
         end: e.endHour,
         type: e.type || 'Lecture',

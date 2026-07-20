@@ -208,16 +208,6 @@ export default function WeeklyScheduleGrid({
               <span className="text-xs font-semibold text-gray-500">{type}</span>
             </div>
           ))}
-          <div className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded-sm" style={{ background: '#F3F4F6', border: '1.5px solid #D1D5DB' }} />
-            <span className="text-xs font-semibold text-gray-500">Blocked</span>
-          </div>
-          {canPlot && (
-            <div className="flex items-center gap-1.5">
-              <div className="w-3 h-3 rounded-sm" style={{ background: '#FEE2E2', border: '1.5px solid #FCA5A5' }} />
-              <span className="text-xs font-semibold text-gray-500">Drag selection</span>
-            </div>
-          )}
         </div>
       )}
 

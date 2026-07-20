@@ -3,7 +3,8 @@ import { X } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
 import { APPROVAL_TYPES } from '../../constants/approvalWorkflow';
-import { COLLEGE_OPTIONS, requiresCollege } from '../../constants/colleges';
+import { requiresCollege } from '../../constants/colleges';
+import { subscribeColleges } from '../../services/collegeService';
 import { fetchWorkflowLevels } from '../../services/approvalWorkflowService';
 import { useModal } from '../../hooks/useModal';
 import { ModalRenderer } from './ModalProvider';
@@ -38,6 +39,7 @@ export default function RoomReservationModal({ onClose, eventType, prefill = {} 
     room: prefill.room || '',
     designatedVenue: prefill.designatedVenue || '',
   });
+  const [colleges, setColleges] = useState([]); // Dynamic colleges from Firestore
   const [workflowPreview, setWorkflowPreview] = useState([]);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -48,6 +50,14 @@ export default function RoomReservationModal({ onClose, eventType, prefill = {} 
   const showCollegeField = requiresCollege(profile?.role);
 
   const set = (key, value) => setForm((prev) => ({ ...prev, [key]: value }));
+
+  // Subscribe to colleges from Firestore
+  useEffect(() => {
+    return subscribeColleges(
+      (data) => setColleges(data),
+      (err) => console.error('Error loading colleges:', err)
+    );
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -299,8 +309,10 @@ export default function RoomReservationModal({ onClose, eventType, prefill = {} 
                 <label className="form-label">Your College <span className="text-red-600">*</span></label>
                 <select className="form-input" value={form.college} onChange={(e) => set('college', e.target.value)} required>
                   <option value="">Select College</option>
-                  {COLLEGE_OPTIONS.map((college) => (
-                    <option key={college.value} value={college.value}>{college.label}</option>
+                  {colleges.map((college) => (
+                    <option key={college.id} value={college.code}>
+                      {college.name} ({college.code})
+                    </option>
                   ))}
                 </select>
                 <p className="text-xs text-gray-500 mt-1">

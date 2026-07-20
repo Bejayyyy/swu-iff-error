@@ -1,12 +1,14 @@
 import React, { useMemo, useState } from 'react';
 import { X } from 'lucide-react';
 import { useApp, defaultNonAcademicSteps } from '../../context/AppContext';
+import { useAuth } from '../../context/AuthContext';
 import { useModal } from '../../hooks/useModal';
 import { ModalRenderer } from './ModalProvider';
 import LoadingModal from './LoadingModal';
 
 export default function NonAcademicRequestModal({ onClose }) {
   const { addRequest, buildingList } = useApp();
+  const { profile } = useAuth();
   const { showConfirm, showNotification, confirmState, notificationState } = useModal();
   const [isLoading, setIsLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState('Processing...');
@@ -65,7 +67,8 @@ export default function NonAcademicRequestModal({ onClose }) {
         title: form.activity,
         department: form.nameOfOrg,
         requestor: form.nameOfOrg,
-        ...form, 
+        ...form,
+        college: profile?.college || profile?.department || '', // Include college for dean filtering
         status: isDraft ? 'Draft' : 'Pending',
       });
       

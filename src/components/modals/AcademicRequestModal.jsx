@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { X } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import { useAuth } from '../../context/AuthContext';
 import { useModal } from '../../hooks/useModal';
 import { ModalRenderer } from './ModalProvider';
 import LoadingModal from './LoadingModal';
@@ -15,6 +16,7 @@ const academicTypes = [
 
 export default function AcademicRequestModal({ onClose }) {
   const { addRequest, buildingList } = useApp();
+  const { profile } = useAuth();
   const { showConfirm, showNotification, confirmState, notificationState } = useModal();
   const [isLoading, setIsLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState('Processing...');
@@ -72,7 +74,8 @@ export default function AcademicRequestModal({ onClose }) {
       await addRequest({
         type: 'academic',
         title: `${selectedType?.label || 'Academic Request'}: ${form.courseDesc}`,
-        ...form, 
+        ...form,
+        college: profile?.college || profile?.department || '', // Include college for dean filtering
         status: isDraft ? 'Draft' : 'Pending',
       });
       

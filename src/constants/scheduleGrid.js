@@ -2,8 +2,6 @@ export const SCHEDULE_TYPE_COLORS = {
   CAS: { bg: '#FEF3C7', text: '#92400E', border: '#FCD34D' },
   Lecture: { bg: '#FEE2E2', text: '#991B1B', border: '#FCA5A5' },
   Laboratory: { bg: '#D1FAE5', text: '#065F46', border: '#6EE7B7' },
-  Exam: { bg: '#DBEAFE', text: '#1E40AF', border: '#93C5FD' },
-  Maintenance: { bg: '#FED7AA', text: '#9A3412', border: '#FB923C' }, // Orange for maintenance
 };
 
 export const SCHEDULE_DAYS = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'];
