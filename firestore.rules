@@ -423,6 +423,41 @@ service cloud.firestore {
         && collection != 'role_definitions';
     }
 
+    // Controlled Schedule Sessions - Registrar-managed workflow
+    match /schedule_control_sessions/{sessionId} {
+      // Registrar can manage all sessions
+      allow read, write: if isRegistrar() && isPhinmaedEmail();
+      
+      // Deans can read sessions where they're base creator or participant
+      allow read: if isDean() && isPhinmaedEmail() && (
+        resource.data.baseCreatorUid == request.auth.uid
+        || resource.data.participants.hasAny([{uid: request.auth.uid}])
+      );
+      
+      // Base creator can update their baseScheduleStatus
+      allow update: if isDean() && isPhinmaedEmail()
+        && resource.data.baseCreatorUid == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'baseScheduleStatus', 'baseScheduleReadyAt', 'updatedAt'
+        ]);
+      
+      // Active participant can update their status
+      allow update: if isDean() && isPhinmaedEmail()
+        && resource.data.currentTurnUid == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'participants', 'updatedAt'
+        ]);
+    }
+
+    // Simple Schedule Access Control - Registrar grants colleges access
+    match /schedule_access_control/{accessId} {
+      // Registrar can manage
+      allow read, write: if isRegistrar() && isPhinmaedEmail();
+      
+      // All staff can read to check their access
+      allow read: if isMainRole() && isPhinmaedEmail();
+    }
+
     // CollectionGroup rules for schedule entries - allows teachers to query their own schedules across all deans
     match /{path=**}/entries/{entryId} {
       allow read: if isMainRole() && isPhinmaedEmail() && userDocExists() && (

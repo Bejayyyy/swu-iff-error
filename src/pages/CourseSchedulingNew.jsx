@@ -11,6 +11,7 @@ import AddPlotEntryModal from '../components/modals/AddPlotEntryModal';
 import AddPlotEntryModalEnhanced from '../components/modals/AddPlotEntryModalEnhanced';
 import LoadingModal from '../components/modals/LoadingModal';
 import NotificationModal from '../components/modals/NotificationModal';
+import GrantScheduleAccessModal from '../components/modals/GrantScheduleAccessModal';
 import { addDays } from '../constants/scheduleGrid';
 import {
   formatDisplayDate,
@@ -33,6 +34,13 @@ import {
   hourToTimeInput,
 } from '../services/plotScheduleService';
 import { subscribeStaffUsers, getDeanDepartmentOptions } from '../services/systemUserService';
+import {
+  subscribeScheduleAccess,
+  grantFirstCollegeAccess,
+  grantAllRemainingAccess,
+  hasSchedulingAccess,
+  getAccessStatusMessage,
+} from '../services/scheduleAccessService';
 import { SCHEDULE_DAYS } from '../constants/scheduleGrid';
 
 // Year level options for section metadata
@@ -90,6 +98,10 @@ export default function CourseSchedulingNew() {
   const [loadingMessage, setLoadingMessage] = useState('');
   const [notification, setNotification] = useState(null); // { type, title, message }
 
+  // Access control state
+  const [scheduleAccess, setScheduleAccess] = useState(null);
+  const [showGrantAccessModal, setShowGrantAccessModal] = useState(false);
+
   const [scheduleTab, setScheduleTab] = useState('regular');
   const [semester, setSemester] = useState('1');
   const [weekStartDate, setWeekStartDate] = useState(() => getInitialWeekStart(null));
@@ -123,6 +135,21 @@ export default function CourseSchedulingNew() {
       }
     }
   }, [scheduleTab, selectedExamPeriod, selectedStudentCategory, semester, calendarData.examPeriods]);
+
+  // Subscribe to schedule access control
+  useEffect(() => {
+    if (!activeSchoolYearId || !semester) {
+      setScheduleAccess(null);
+      return undefined;
+    }
+
+    return subscribeScheduleAccess(
+      activeSchoolYearId,
+      semester,
+      (access) => setScheduleAccess(access),
+      (err) => console.error('Error loading schedule access:', err)
+    );
+  }, [activeSchoolYearId, semester]);
 
   // Subscribe to staff users to get dean list
   useEffect(() => {
@@ -229,11 +256,20 @@ export default function CourseSchedulingNew() {
     );
   }, [selectedDeanUid, selectedSection, semester, scheduleTab, selectedExamPeriod]);
 
+  // Check if current dean has scheduling access
+  const myCollege = isDean ? (profile?.college || profile?.department) : null;
+  const accessStatus = useMemo(() => {
+    if (!isDean || !myCollege) return { hasAccess: true, message: '', isFirst: false }; // Registrar always has access for viewing
+    return getAccessStatusMessage(scheduleAccess, myCollege);
+  }, [isDean, myCollege, scheduleAccess]);
+
   const canPlot = useMemo(() => {
     if (isRegistrar) return false; // Registrar can only view
-    if (isDean && profile?.uid === selectedDeanUid) return true;
+    if (isDean && profile?.uid === selectedDeanUid) {
+      return accessStatus.hasAccess; // Dean must have access
+    }
     return false;
-  }, [isRegistrar, isDean, profile, selectedDeanUid]);
+  }, [isRegistrar, isDean, profile, selectedDeanUid, accessStatus]);
 
   const semesterBounds = useMemo(
     () => getSemesterBounds(calendarData.config, semester),
@@ -634,6 +670,138 @@ export default function CourseSchedulingNew() {
           </p>
         </div>
       </div>
+
+      {/* Registrar Access Control Panel */}
+      {isRegistrar && (
+        <div className="bg-gradient-to-r from-purple-50 to-blue-50 border-2 border-purple-200 rounded-2xl p-5 mb-5">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="font-black text-sm" style={{ color: '#2B3235' }}>
+                📋 Schedule Access Control
+              </h3>
+              <p className="text-xs text-gray-600 mt-0.5">
+                Manage which colleges can create schedules
+              </p>
+            </div>
+            
+            {!scheduleAccess && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (!activeSchoolYearId || !semester) {
+                    alert('Please select a school year and semester first.');
+                    return;
+                  }
+                  setShowGrantAccessModal(true);
+                }}
+                disabled={!activeSchoolYearId || !semester}
+                className="px-4 py-2 rounded-lg text-sm font-bold bg-[#800000] text-white hover:bg-[#600000] transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Send size={16} />
+                Grant First College Access
+              </button>
+            )}
+          </div>
+
+          {scheduleAccess ? (
+            <div className="space-y-3">
+              {/* Current Status */}
+              <div className="bg-white rounded-lg p-3 border border-gray-200">
+                <p className="text-xs font-bold mb-2" style={{ color: '#2B3235' }}>
+                  Current Status:
+                </p>
+                <div className="flex items-center gap-2">
+                  <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+                    scheduleAccess.status === 'all_allowed' 
+                      ? 'bg-green-100 text-green-800' 
+                      : 'bg-yellow-100 text-yellow-800'
+                  }`}>
+                    {scheduleAccess.status === 'all_allowed' 
+                      ? '✅ All Colleges Can Schedule' 
+                      : '⏳ First College Only'}
+                  </span>
+                </div>
+              </div>
+
+              {/* First College Info */}
+              {scheduleAccess.firstCollege && (
+                <div className="bg-white rounded-lg p-3 border border-gray-200">
+                  <p className="text-xs font-bold mb-2" style={{ color: '#2B3235' }}>
+                    First College (Currently Scheduling):
+                  </p>
+                  <p className="text-sm font-bold text-[#800000]">
+                    {scheduleAccess.firstCollege.name}
+                  </p>
+                  <p className="text-[10px] text-gray-500 mt-1">
+                    Granted: {new Date(scheduleAccess.firstCollege.grantedAt).toLocaleString()}
+                  </p>
+                </div>
+              )}
+
+              {/* Action Button */}
+              {scheduleAccess.status === 'first_only' && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!window.confirm('Allow all remaining colleges to create their schedules? This action cannot be undone.')) return;
+                    try {
+                      await grantAllRemainingAccess(activeSchoolYearId, semester, profile?.uid);
+                    } catch (err) {
+                      alert(err.message || 'Failed to grant access.');
+                    }
+                  }}
+                  className="w-full px-4 py-3 rounded-lg text-sm font-bold bg-green-600 text-white hover:bg-green-700 transition-all flex items-center justify-center gap-2"
+                >
+                  ✅ Allow All Remaining Colleges to Schedule
+                </button>
+              )}
+
+              {scheduleAccess.status === 'all_allowed' && (
+                <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                  <p className="text-xs font-bold text-green-800">
+                    ✅ All colleges have scheduling access
+                  </p>
+                  {scheduleAccess.allAccessGrantedAt && (
+                    <p className="text-[10px] text-green-700 mt-1">
+                      Granted: {new Date(scheduleAccess.allAccessGrantedAt).toLocaleString()}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="bg-white rounded-lg p-4 border border-gray-200 text-center">
+              <p className="text-sm text-gray-500">
+                No access control set for this semester. Click "Grant First College Access" to begin.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Dean Access Status Banner - Waiting */}
+      {isDean && !accessStatus.hasAccess && (
+        <div className="bg-yellow-50 border-2 border-yellow-300 rounded-2xl p-6 mb-5 text-center">
+          <div className="w-16 h-16 rounded-full bg-yellow-200 flex items-center justify-center mx-auto mb-3">
+            <span className="text-3xl">⏳</span>
+          </div>
+          <h3 className="font-black text-lg mb-2" style={{ color: '#92400E' }}>
+            Waiting for Access
+          </h3>
+          <p className="text-sm font-semibold text-yellow-800">
+            {accessStatus.message}
+          </p>
+        </div>
+      )}
+
+      {/* Dean Access Status Banner - First College */}
+      {isDean && accessStatus.hasAccess && accessStatus.isFirst && (
+        <div className="bg-blue-50 border-2 border-blue-300 rounded-2xl p-4 mb-5">
+          <p className="text-sm font-bold text-blue-900">
+            🎯 You are the first college to schedule. Other colleges will schedule after you complete.
+          </p>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 xl:grid-cols-[280px_1fr] gap-5">
         {/* Left Sidebar - Colleges and Deans */}
@@ -1115,6 +1283,24 @@ export default function CourseSchedulingNew() {
 
       {/* Global Modals */}
       <ModalRenderer confirmState={confirmState} notificationState={notificationState} />
+
+      {/* Grant Schedule Access Modal */}
+      {showGrantAccessModal && (
+        <GrantScheduleAccessModal
+          isOpen={showGrantAccessModal}
+          onClose={() => setShowGrantAccessModal(false)}
+          schoolYearId={activeSchoolYearId}
+          semester={semester}
+          onSuccess={() => {
+            setShowGrantAccessModal(false);
+            showNotification({
+              type: 'success',
+              title: 'Access Granted',
+              message: 'The first college has been granted scheduling access.',
+            });
+          }}
+        />
+      )}
     </Layout>
   );
 }
