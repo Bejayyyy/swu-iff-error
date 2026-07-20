@@ -1,8 +1,9 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { Users, Mail, Phone, BookOpen, Building2, GraduationCap, Plus, X } from 'lucide-react';
+import { Users, Mail, Phone, BookOpen, Building2, GraduationCap, Plus, X, Calendar } from 'lucide-react';
 import Layout from '../components/Layout';
 import LoadingModal from '../components/modals/LoadingModal';
 import NotificationModal from '../components/modals/NotificationModal';
+import TeacherScheduleModal from '../components/modals/TeacherScheduleModal';
 import { useAuth } from '../context/AuthContext';
 import { ROLES } from '../firebase/constants';
 import { subscribeStaffUsers } from '../services/systemUserService';
@@ -24,6 +25,8 @@ export default function TeachersDirectory() {
   const [notification, setNotification] = useState(null);
   const [selectedTeacher, setSelectedTeacher] = useState(null);
   const [showAssignModal, setShowAssignModal] = useState(false);
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [scheduleTeacher, setScheduleTeacher] = useState(null);
 
   // Subscribe to all teachers
   useEffect(() => {
@@ -113,6 +116,11 @@ export default function TeachersDirectory() {
   const handleAssignCourse = (teacher) => {
     setSelectedTeacher(teacher);
     setShowAssignModal(true);
+  };
+
+  const handleViewSchedule = (teacher) => {
+    setScheduleTeacher(teacher);
+    setShowScheduleModal(true);
   };
 
   const handleAssignCourseToTeacher = async (courseId) => {
@@ -378,6 +386,18 @@ export default function TeachersDirectory() {
                           </span>
                         </div>
                       )}
+
+                      {/* View Schedule Button */}
+                      <div className="mt-3 pt-3 border-t border-gray-100">
+                        <button
+                          type="button"
+                          onClick={() => handleViewSchedule(teacher)}
+                          className="w-full px-3 py-2 rounded-lg text-xs font-bold bg-gray-100 text-gray-700 hover:bg-[#800000] hover:text-white transition-all flex items-center justify-center gap-1.5"
+                        >
+                          <Calendar size={14} />
+                          View Weekly Schedule
+                        </button>
+                      </div>
                     </div>
                   );
                 })}
@@ -394,6 +414,19 @@ export default function TeachersDirectory() {
           <p className="text-sm font-semibold text-gray-400 mb-2">No teachers match your search</p>
           <p className="text-xs text-gray-400">Try a different search term</p>
         </div>
+      )}
+
+      {/* Teacher Schedule Modal */}
+      {showScheduleModal && scheduleTeacher && (
+        <TeacherScheduleModal
+          teacher={scheduleTeacher}
+          semester="1"
+          collegeCode={scheduleTeacher.department || scheduleTeacher.college}
+          onClose={() => {
+            setShowScheduleModal(false);
+            setScheduleTeacher(null);
+          }}
+        />
       )}
 
       {/* Assign Course Modal */}

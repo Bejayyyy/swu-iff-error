@@ -155,7 +155,12 @@ service cloud.firestore {
         );
 
         match /entries/{entryId} {
-          allow read: if isMainRole() && isPhinmaedEmail();
+          // Allow teachers to read entries where they are the instructor
+          allow read: if isMainRole() && isPhinmaedEmail() && (
+            isRegistrar() 
+            || (hasRole('dean') && callerIsSelf(userId))
+            || (hasRole('teacher') && userDocExists() && resource.data.instructor == userDoc().data.displayName)
+          );
           allow create, update, delete: if isPhinmaedEmail() && (
             isRegistrar() || (hasRole('dean') && callerIsSelf(userId))
           );
@@ -348,6 +353,15 @@ service cloud.firestore {
         && collection != 'approval_workflows'
         && collection != 'room_reservations'
         && collection != 'role_definitions';
+    }
+
+    // CollectionGroup rules for schedule entries - allows teachers to query their own schedules across all deans
+    match /{path=**}/entries/{entryId} {
+      allow read: if isMainRole() && isPhinmaedEmail() && userDocExists() && (
+        isRegistrar()
+        || hasRole('dean')
+        || (hasRole('teacher') && resource.data.instructor == userDoc().data.displayName)
+      );
     }
   }
 }

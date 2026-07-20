@@ -4,6 +4,8 @@ import Layout from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
 import { ROLES } from '../firebase/constants';
 import { useAcademicCalendar } from '../hooks/useAcademicCalendar';
+import { useModal } from '../hooks/useModal';
+import { ModalRenderer } from '../components/modals/ModalProvider';
 import WeeklyScheduleGrid from '../components/scheduling/WeeklyScheduleGrid';
 import AddPlotEntryModal from '../components/modals/AddPlotEntryModal';
 import AddPlotEntryModalEnhanced from '../components/modals/AddPlotEntryModalEnhanced';
@@ -61,6 +63,7 @@ export default function CourseSchedulingNew() {
   const { profile } = useAuth();
   const isRegistrar = profile?.role === ROLES.REGISTRAR;
   const isDean = profile?.role === ROLES.DEAN;
+  const { showConfirm, showNotification, confirmState, notificationState } = useModal();
 
   const {
     schoolYears,
@@ -362,7 +365,8 @@ export default function CourseSchedulingNew() {
   };
 
   const openEditModal = (block) => {
-    if (!canPlot) return;
+    // Allow dean to edit their own schedules
+    if (!isDean || !selectedDeanUid || profile?.uid !== selectedDeanUid) return;
     const dayIdx = block.day;
     const dayIdentifier = scheduleTab === 'regular' ? WEEKDAYS[dayIdx] : (block.date || weekDates[dayIdx]);
     
@@ -442,12 +446,33 @@ export default function CourseSchedulingNew() {
   };
 
   const handleDeleteEntry = async (block) => {
-    if (!canPlot || !selectedDeanUid || !selectedSection) return;
-    if (!window.confirm('Remove this schedule block?')) return;
+    // Allow dean to delete their own schedules
+    if (!isDean || !selectedDeanUid || !selectedSection || profile?.uid !== selectedDeanUid) return;
+    
+    const confirmed = await showConfirm({
+      title: 'Delete schedule block?',
+      message: `Remove "${block.title || block.course}" from the schedule? This action cannot be undone.`,
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+      variant: 'danger',
+    });
+
+    if (!confirmed) return;
+    
     try {
       await deletePlotEntryForSection(selectedDeanUid, selectedSection, block.id);
+      showNotification({
+        type: 'success',
+        title: 'Schedule deleted',
+        message: 'The schedule block has been removed.',
+      });
     } catch (err) {
       setError(err.message || 'Failed to delete block.');
+      showNotification({
+        type: 'error',
+        title: 'Delete failed',
+        message: err.message || 'Failed to delete the schedule block.',
+      });
     }
   };
 
@@ -503,7 +528,15 @@ export default function CourseSchedulingNew() {
   const handleDeleteSection = async (sectionName) => {
     if (!selectedDeanUid || !sectionName) return;
     
-    if (!window.confirm(`Delete section "${sectionName}" and all its schedule entries?`)) return;
+    const confirmed = await showConfirm({
+      title: 'Delete section?',
+      message: `Delete section "${sectionName}" and all its schedule entries? This action cannot be undone.`,
+      confirmText: 'Delete Section',
+      cancelText: 'Cancel',
+      variant: 'danger',
+    });
+
+    if (!confirmed) return;
 
     setIsLoading(true);
     setLoadingMessage('Deleting section...');
@@ -516,7 +549,7 @@ export default function CourseSchedulingNew() {
       setIsLoading(false);
       
       // Show success notification
-      setNotification({
+      showNotification({
         type: 'success',
         title: 'Section Deleted!',
         message: `Section "${sectionName}" and all its schedules have been deleted.`,
@@ -526,7 +559,7 @@ export default function CourseSchedulingNew() {
       setIsLoading(false);
       
       // Show error notification
-      setNotification({
+      showNotification({
         type: 'error',
         title: 'Failed to Delete Section',
         message: err.message || 'An error occurred while deleting the section.',
@@ -920,7 +953,7 @@ export default function CourseSchedulingNew() {
                 semesterRangeLabel={semesterRangeLabel}
                 dayStatuses={dayStatuses}
                 blocks={gridBlocks}
-                readOnly={!canPlot}
+                readOnly={!isDean || profile?.uid !== selectedDeanUid}
                 canPlot={canPlot}
                 onAddBlock={() => {
                   const firstOpenIdx = dayStatuses.findIndex((d) => !d.disabled);
@@ -1079,6 +1112,9 @@ export default function CourseSchedulingNew() {
           autoCloseMs={notification.type === 'success' ? 3000 : 0}
         />
       )}
+
+      {/* Global Modals */}
+      <ModalRenderer confirmState={confirmState} notificationState={notificationState} />
     </Layout>
   );
 }
