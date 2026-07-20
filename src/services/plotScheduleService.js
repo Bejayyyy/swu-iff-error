@@ -228,7 +228,19 @@ export async function updatePlotEntry(plotId, entryId, patch) {
 }
 
 export async function deletePlotEntry(plotId, entryId) {
-  await deleteDoc(doc(entriesRef(plotId), entryId));
+  if (!plotId) throw new Error('Plot ID is required for deletion.');
+  if (!entryId) throw new Error('Entry ID is required for deletion.');
+  
+  console.log('deletePlotEntry called:', { plotId, entryId });
+  
+  try {
+    const entryRef = doc(entriesRef(plotId), entryId);
+    await deleteDoc(entryRef);
+    console.log('deletePlotEntry successful');
+  } catch (error) {
+    console.error('deletePlotEntry error:', error);
+    throw new Error(`Failed to delete schedule entry: ${error.message}`);
+  }
 }
 
 function findRecipientIndex(recipients, profile) {

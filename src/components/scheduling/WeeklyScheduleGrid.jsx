@@ -308,12 +308,28 @@ export default function WeeklyScheduleGrid({
                         {!readOnly && (onEditBlock || onDeleteBlock) && (
                           <div className="flex gap-1 mt-1 pointer-events-auto">
                             {onEditBlock && (
-                              <button type="button" className="p-0.5 rounded hover:bg-white/50" onClick={() => onEditBlock(sched)}>
+                              <button 
+                                type="button" 
+                                className="p-0.5 rounded hover:bg-white/50" 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  e.preventDefault();
+                                  onEditBlock(sched);
+                                }}
+                              >
                                 <Edit2 size={9} style={{ color: colors.text }} />
                               </button>
                             )}
                             {onDeleteBlock && (
-                              <button type="button" className="p-0.5 rounded hover:bg-white/50" onClick={() => onDeleteBlock(sched)}>
+                              <button 
+                                type="button" 
+                                className="p-0.5 rounded hover:bg-white/50" 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  e.preventDefault();
+                                  onDeleteBlock(sched);
+                                }}
+                              >
                                 <Trash2 size={9} style={{ color: colors.text }} />
                               </button>
                             )}

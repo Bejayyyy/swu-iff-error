@@ -227,6 +227,7 @@ export function AppProvider({ children }) {
         setRequestsError(err.message || 'Failed to load reservations.');
         setRequestsLoading(false);
       },
+      profile, // Pass user profile for role-based filtering
     );
     return unsub;
   }, [isReady, authLoading, firebaseUser, profile]);

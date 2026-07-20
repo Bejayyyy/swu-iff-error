@@ -39,8 +39,70 @@ function mapReservationDoc(d) {
   };
 }
 
-export function subscribeRoomReservations(onData, onError) {
-  const q = query(reservationsCollection(), orderBy('createdAt', 'desc'));
+export function subscribeRoomReservations(onData, onError, userProfile = null) {
+  // If no user profile provided, return empty subscription
+  if (!userProfile) {
+    onData([]);
+    return () => {};
+  }
+
+  // Registrar can see all reservations
+  if (userProfile.role === 'registrar') {
+    const q = query(reservationsCollection(), orderBy('createdAt', 'desc'));
+    return onSnapshot(
+      q,
+      (snap) => onData(snap.docs.map(mapReservationDoc)),
+      onError,
+    );
+  }
+
+  // Dean can see reservations from their college OR where they're custom manager OR their own
+  if (userProfile.role === 'dean') {
+    const college = userProfile.college || userProfile.department;
+    if (college) {
+      // Query by college field (will also include custom-managed reservations via rules)
+      const q = query(
+        reservationsCollection(),
+        where('college', '==', college),
+        orderBy('createdAt', 'desc')
+      );
+      return onSnapshot(
+        q,
+        (snap) => onData(snap.docs.map(mapReservationDoc)),
+        onError,
+      );
+    }
+  }
+
+  // GSD, Student Life, and Organization Head see all non-draft reservations
+  // They're part of approval workflows and need to see pending requests
+  // Firestore rules will filter to ensure they can only read what they're allowed
+  if (userProfile.role === 'gsd' || 
+      userProfile.role === 'student_life' || 
+      userProfile.role === 'organization_head') {
+    const q = query(
+      reservationsCollection(),
+      where('status', 'in', [
+        RESERVATION_STATUS.IN_PROGRESS,
+        RESERVATION_STATUS.APPROVED,
+        RESERVATION_STATUS.REJECTED
+      ]),
+      orderBy('createdAt', 'desc')
+    );
+    return onSnapshot(
+      q,
+      (snap) => onData(snap.docs.map(mapReservationDoc)),
+      onError,
+    );
+  }
+
+  // For other roles (teacher, etc.), see their own reservations
+  const q = query(
+    reservationsCollection(),
+    where('createdByUid', '==', userProfile.uid),
+    orderBy('createdAt', 'desc')
+  );
+  
   return onSnapshot(
     q,
     (snap) => onData(snap.docs.map(mapReservationDoc)),

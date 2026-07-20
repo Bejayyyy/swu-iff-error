@@ -262,11 +262,24 @@ export default function CourseScheduling() {
   };
 
   const handleDeleteEntry = async (block) => {
-    if (!canPlot || !selectedPlotId) return;
+    if (!canPlot || !selectedPlotId) {
+      console.warn('Delete blocked:', { canPlot, selectedPlotId });
+      return;
+    }
+    if (!block?.id) {
+      setError('Invalid schedule block - missing ID.');
+      return;
+    }
     if (!window.confirm('Remove this schedule block?')) return;
+    
+    console.log('Deleting entry:', { plotId: selectedPlotId, entryId: block.id });
+    
     try {
       await deletePlotEntry(selectedPlotId, block.id);
+      console.log('Delete successful');
+      setError(''); // Clear any previous errors
     } catch (err) {
+      console.error('Delete failed:', err);
       setError(err.message || 'Failed to delete block.');
     }
   };
