@@ -11,6 +11,7 @@ import EditRoomModal from '../components/modals/EditRoomModal';
 import WeeklyScheduleGrid from '../components/scheduling/WeeklyScheduleGrid';
 import { subscribeApprovedReservationsForRoom } from '../services/reservationService';
 import { getRoomMaintenanceSchedule, subscribeMaintenanceSchedules } from '../services/maintenanceService';
+import { subscribeAllPlotEntriesForRoom } from '../services/plotScheduleService';
 import ScheduleMaintenanceModal from '../components/modals/ScheduleMaintenanceModal';
 import ReportMaintenanceModal from '../components/modals/ReportMaintenanceModal';
 import { useModal } from '../hooks/useModal';
@@ -31,6 +32,7 @@ export default function RoomDetails() {
   const [weekStartDate, setWeekStartDate] = useState(() => getInitialWeekStart(null));
   const [showEditRoom, setShowEditRoom] = useState(false);
   const [approvedReservations, setApprovedReservations] = useState([]);
+  const [courseSchedules, setCourseSchedules] = useState([]); // Course schedules from all deans
   const [maintenanceSchedules, setMaintenanceSchedules] = useState([]);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showScheduleMaintenance, setShowScheduleMaintenance] = useState(false);
@@ -123,6 +125,31 @@ export default function RoomDetails() {
     return () => unsubscribe();
   }, [displayRoom?.docId]);
 
+  // Subscribe to course schedules for this room (from ALL deans)
+  useEffect(() => {
+    if (!displayRoom?.id && !displayRoom?.roomCode) return;
+    
+    const roomCode = displayRoom.id || displayRoom.roomCode;
+    
+    console.log('[RoomDetails] Subscribing to course schedules for room:', roomCode);
+    
+    const unsubscribe = subscribeAllPlotEntriesForRoom(
+      roomCode,
+      semesterTab,
+      'regular', // Only get regular schedules (not exam schedules)
+      (schedules) => {
+        console.log(`[RoomDetails] Loaded ${schedules.length} course schedules for room ${roomCode}:`, schedules);
+        setCourseSchedules(schedules);
+      },
+      (error) => console.error('[RoomDetails] Error loading course schedules:', error)
+    );
+
+    return () => {
+      console.log('[RoomDetails] Unsubscribing from course schedules');
+      unsubscribe();
+    };
+  }, [displayRoom?.id, displayRoom?.roomCode, semesterTab]);
+
   // Subscribe to maintenance schedules for this room
   useEffect(() => {
     if (!displayRoom?.docId) return;
@@ -138,16 +165,72 @@ export default function RoomDetails() {
     return () => unsubscribe();
   }, [displayRoom?.docId]);
 
-  // Convert reservations and maintenance schedules to schedule blocks for the current week
+  // Convert reservations, course schedules, and maintenance schedules to schedule blocks for the current week
   const scheduleBlocks = useMemo(() => {
     const weekDates = Array.from({ length: 7 }, (_, i) => {
       const date = addDays(weekStartDate, i);
       return date.toISOString().split('T')[0]; // YYYY-MM-DD format
     });
 
+    console.log('[RoomDetails] Building schedule blocks for week:', weekDates);
+    console.log('[RoomDetails] Course schedules:', courseSchedules);
+    console.log('[RoomDetails] Approved reservations:', approvedReservations);
+
     const blocks = [];
 
-    // Add reservation blocks
+    // Add COURSE SCHEDULE blocks (Regular schedules - repeat every week)
+    // These are semester-long and match by DAY OF WEEK, not specific date
+    courseSchedules.forEach((schedule) => {
+      // schedule.day is 0-6 for Monday-Sunday (from WEEKDAYS array in CourseSchedulingNew)
+      const dayIndex = schedule.day;
+      
+      if (dayIndex < 0 || dayIndex >= 7) {
+        console.warn('[RoomDetails] Invalid day index for schedule:', dayIndex, schedule);
+        return; // Invalid day
+      }
+      
+      // Get start and end times - handle both hour numbers and time strings
+      let startHour = 0;
+      let endHour = 0;
+      
+      if (typeof schedule.startHour === 'number' && typeof schedule.endHour === 'number') {
+        // Data stored as hour numbers (e.g., 7.5 = 7:30 AM)
+        startHour = schedule.startHour;
+        endHour = schedule.endHour;
+      } else if (schedule.startTime && schedule.endTime) {
+        // Data stored as time strings (e.g., "07:30")
+        const timeToHour = (timeStr) => {
+          if (!timeStr) return 0;
+          const [hours, minutes] = timeStr.split(':').map(Number);
+          return hours + minutes / 60;
+        };
+        startHour = timeToHour(schedule.startTime);
+        endHour = timeToHour(schedule.endTime);
+      } else {
+        console.warn('[RoomDetails] Schedule missing time data:', schedule);
+        return; // Skip schedules without valid times
+      }
+
+      const block = {
+        id: `course-${schedule.id}`,
+        day: dayIndex,
+        title: schedule.title || schedule.courseCode,
+        course: schedule.courseCode || '',
+        instructor: schedule.instructor || schedule.deanName,
+        start: startHour,
+        end: endHour,
+        type: schedule.type || 'Lecture',
+        roomCode: displayRoom.id || displayRoom.roomCode,
+        isCourseSchedule: true,
+        college: schedule.college || '',
+        section: schedule.sectionName || schedule.section || '',
+      };
+
+      console.log('[RoomDetails] Adding course schedule block:', block);
+      blocks.push(block);
+    });
+
+    // Add RESERVATION blocks (Date-specific - only show for matching date)
     approvedReservations.forEach((reservation) => {
       // Convert DD/MM/YYYY to YYYY-MM-DD
       let dateStr = reservation.dateOfActivity;
@@ -169,15 +252,16 @@ export default function RoomDetails() {
       };
 
       blocks.push({
-        id: reservation.id,
+        id: `reservation-${reservation.id}`,
         day: dayIndex,
         title: reservation.activity || reservation.title,
         course: reservation.nameOfOrg || reservation.department,
         instructor: reservation.requestedBy,
         start: timeToHour(reservation.timeStart),
         end: timeToHour(reservation.timeEnd),
-        type: reservation.type === 'academic' ? 'CAS' : 'Laboratory',
+        type: reservation.type === 'academic' ? 'Reservation (Academic)' : 'Reservation (Non-Academic)',
         roomCode: displayRoom.id || displayRoom.roomCode,
+        isReservation: true,
       });
     });
 
@@ -251,8 +335,9 @@ export default function RoomDetails() {
       });
     });
 
+    console.log('[RoomDetails] Final schedule blocks:', blocks);
     return blocks;
-  }, [approvedReservations, maintenanceSchedules, weekStartDate, displayRoom]);
+  }, [courseSchedules, approvedReservations, maintenanceSchedules, weekStartDate, displayRoom]);
 
   if (!displayRoom) {
     return (
@@ -401,7 +486,15 @@ export default function RoomDetails() {
       {/* Week Selector with Calendar */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 mb-5">
         <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
-          <h3 className="font-bold text-sm" style={{ color: '#2B3235' }}>Room Schedule</h3>
+          <div>
+            <h3 className="font-bold text-sm" style={{ color: '#2B3235' }}>Room Schedule</h3>
+            <p className="text-xs text-gray-500 mt-1">
+              {courseSchedules.length > 0 && `${courseSchedules.length} course schedule${courseSchedules.length !== 1 ? 's' : ''} (repeats weekly)`}
+              {courseSchedules.length > 0 && approvedReservations.length > 0 && ' • '}
+              {approvedReservations.length > 0 && `${approvedReservations.length} reservation${approvedReservations.length !== 1 ? 's' : ''} (date-specific)`}
+              {courseSchedules.length === 0 && approvedReservations.length === 0 && 'No schedules or reservations'}
+            </p>
+          </div>
           
           {/* Schedule Type Toggle */}
           <div className="inline-flex w-fit items-center p-1 gap-1 shadow-sm" style={{ background: '#F9FAFB', borderRadius: 10 }}>
@@ -526,7 +619,11 @@ export default function RoomDetails() {
         readOnly
         showControls={false}
         showLegend={true}
-        emptyMessage="No approved reservations for this week"
+        emptyMessage={
+          courseSchedules.length === 0 && approvedReservations.length === 0
+            ? "No course schedules or reservations for this room"
+            : "Navigate through weeks to see schedules and reservations"
+        }
       />
 
       {modals}

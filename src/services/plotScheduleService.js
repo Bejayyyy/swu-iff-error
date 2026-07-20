@@ -734,3 +734,255 @@ export function subscribePlotEntriesForTeacher(teacherName, semester, onData, on
     }
   );
 }
+
+/**
+ * Subscribe to ALL course schedule entries for a specific room (from ALL deans)
+ * Used in Room Details page to show the complete schedule for a room
+ */
+export function subscribeAllPlotEntriesForRoom(roomCode, semester, scheduleMode, onData, onError) {
+  if (!roomCode) {
+    console.warn('[subscribeAllPlotEntriesForRoom] No roomCode provided');
+    onData([]);
+    return () => {};
+  }
+
+  console.log('[subscribeAllPlotEntriesForRoom] Starting subscription:', {
+    roomCode,
+    semester,
+    scheduleMode
+  });
+
+  // We need to query all users and their course_schedules
+  // This is a complex query since course_schedules are nested under users
+  
+  const unsubscribers = [];
+  const deanData = new Map(); // Track entries from each dean
+  let isInitialized = false;
+  
+  // Get all users with role 'dean'
+  const usersRef = collection(db, COLLECTIONS.USERS);
+  const deansQuery = query(usersRef, where('role', '==', 'dean'));
+  
+  getDocs(deansQuery).then(deansSnapshot => {
+    console.log(`[subscribeAllPlotEntriesForRoom] Found ${deansSnapshot.docs.length} deans to check for room ${roomCode}`);
+    
+    if (deansSnapshot.empty) {
+      console.warn('[subscribeAllPlotEntriesForRoom] No deans found in database');
+      onData([]);
+      isInitialized = true;
+      return;
+    }
+    
+    let processedDeans = 0;
+    
+    deansSnapshot.docs.forEach(deanDoc => {
+      const deanUid = deanDoc.id;
+      const deanData_single = deanDoc.data();
+      const deanName = deanData_single.name || 'Unknown';
+      const college = deanData_single.college || deanData_single.department || 'Unknown';
+      const userRef = doc(db, COLLECTIONS.USERS, deanUid);
+      const schedulesColl = collection(userRef, 'course_schedules');
+      
+      console.log(`[subscribeAllPlotEntriesForRoom] Checking dean: ${deanName} (${college})`);
+      
+      // Get all sections for this dean
+      getDocs(schedulesColl).then(sectionsSnapshot => {
+        processedDeans++;
+        
+        if (sectionsSnapshot.empty) {
+          console.log(`[subscribeAllPlotEntriesForRoom] No sections found for dean ${deanName}`);
+          // If all deans processed and still no data, initialize with empty
+          if (processedDeans === deansSnapshot.docs.length && !isInitialized) {
+            console.log('[subscribeAllPlotEntriesForRoom] All deans processed, no schedules found');
+            onData([]);
+            isInitialized = true;
+          }
+          return;
+        }
+        
+        console.log(`[subscribeAllPlotEntriesForRoom] Dean ${deanName} has ${sectionsSnapshot.docs.length} sections`);
+        
+        sectionsSnapshot.docs.forEach(sectionDoc => {
+          const sectionName = sectionDoc.id;
+          const entriesRef = collection(userRef, 'course_schedules', sectionName, 'entries');
+          
+          // Subscribe to entries in this section that match the room and mode
+          let q = query(
+            entriesRef,
+            where('roomCode', '==', roomCode)
+          );
+          
+          // Add scheduleMode filter only for specific modes
+          if (scheduleMode) {
+            q = query(q, where('scheduleMode', '==', scheduleMode));
+          }
+          
+          console.log(`[subscribeAllPlotEntriesForRoom] Subscribing to ${deanName}/${sectionName}/entries with roomCode=${roomCode}`);
+          
+          const unsubscribe = onSnapshot(
+            q,
+            (snapshot) => {
+              const entries = snapshot.docs.map(d => ({ 
+                id: d.id, 
+                ...d.data(),
+                deanUid,
+                deanName,
+                college,
+                sectionName 
+              }));
+              
+              console.log(`[subscribeAllPlotEntriesForRoom] Dean ${deanName}/${sectionName} has ${entries.length} entries for room ${roomCode}`);
+              
+              // Store entries from this dean+section
+              const key = `${deanUid}_${sectionName}`;
+              deanData.set(key, entries);
+              
+              // Aggregate all entries from all deans and sections
+              const allEntries = Array.from(deanData.values()).flat();
+              console.log(`[subscribeAllPlotEntriesForRoom] Total aggregated entries: ${allEntries.length}`);
+              onData(allEntries);
+              isInitialized = true;
+            },
+            (err) => {
+              console.error(`[subscribeAllPlotEntriesForRoom] Error subscribing to dean ${deanName} section ${sectionName}:`, err);
+            }
+          );
+          
+          unsubscribers.push(unsubscribe);
+        });
+      }).catch(err => {
+        console.error(`[subscribeAllPlotEntriesForRoom] Error getting sections for dean ${deanName}:`, err);
+        processedDeans++;
+      });
+    });
+  }).catch(err => {
+    console.error('[subscribeAllPlotEntriesForRoom] Error getting deans:', err);
+    if (onError) onError(err);
+  });
+
+  // Return a function that unsubscribes from all listeners
+  return () => {
+    console.log('[subscribeAllPlotEntriesForRoom] Unsubscribing from all room schedule listeners');
+    unsubscribers.forEach(unsub => unsub());
+  };
+}
+
+/**
+ * Check if a room reservation would conflict with existing course schedules
+ * Returns true if there's a conflict, false if the time slot is available
+ */
+export async function checkReservationConflict(roomCode, dateStr, timeStart, timeEnd, semester) {
+  if (!roomCode || !dateStr || !timeStart || !timeEnd) {
+    return { hasConflict: false, conflicts: [] };
+  }
+
+  console.log('[checkReservationConflict] Checking:', {
+    roomCode,
+    dateStr,
+    timeStart,
+    timeEnd,
+    semester
+  });
+
+  // Convert date string (DD/MM/YYYY or YYYY-MM-DD) to get day of week
+  let date;
+  if (dateStr.includes('/')) {
+    // DD/MM/YYYY format
+    const parts = dateStr.split('/');
+    date = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
+  } else {
+    // YYYY-MM-DD format
+    date = new Date(dateStr);
+  }
+  
+  const dayOfWeek = date.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+  const dayIndex = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // Convert to 0 = Monday, 6 = Sunday
+  
+  console.log('[checkReservationConflict] Date:', dateStr, 'Day of week:', dayOfWeek, 'Day index:', dayIndex);
+
+  // Convert time strings to hour numbers for comparison
+  const timeToHour = (timeStr) => {
+    if (!timeStr) return 0;
+    const [hours, minutes] = timeStr.split(':').map(Number);
+    return hours + (minutes / 60);
+  };
+
+  const reservationStart = timeToHour(timeStart);
+  const reservationEnd = timeToHour(timeEnd);
+
+  console.log('[checkReservationConflict] Reservation time:', reservationStart, 'to', reservationEnd);
+
+  // Get all deans
+  const usersRef = collection(db, COLLECTIONS.USERS);
+  const deansQuery = query(usersRef, where('role', '==', 'dean'));
+  
+  try {
+    const deansSnapshot = await getDocs(deansQuery);
+    console.log('[checkReservationConflict] Found', deansSnapshot.docs.length, 'deans');
+    
+    const conflicts = [];
+
+    // Check each dean's schedules
+    for (const deanDoc of deansSnapshot.docs) {
+      const deanUid = deanDoc.id;
+      const deanData = deanDoc.data();
+      const deanName = deanData.name || 'Unknown';
+      const college = deanData.college || deanData.department || 'Unknown';
+      
+      const userRef = doc(db, COLLECTIONS.USERS, deanUid);
+      const schedulesColl = collection(userRef, 'course_schedules');
+      
+      // Get all sections for this dean
+      const sectionsSnapshot = await getDocs(schedulesColl);
+      
+      for (const sectionDoc of sectionsSnapshot.docs) {
+        const sectionName = sectionDoc.id;
+        const entriesRef = collection(userRef, 'course_schedules', sectionName, 'entries');
+        
+        // Query for entries matching the room and day
+        const entriesQuery = query(
+          entriesRef,
+          where('roomCode', '==', roomCode),
+          where('day', '==', dayIndex),
+          where('scheduleMode', '==', 'regular') // Only check regular schedules
+        );
+        
+        const entriesSnapshot = await getDocs(entriesQuery);
+        
+        // Check each entry for time conflicts
+        entriesSnapshot.docs.forEach(entryDoc => {
+          const entry = entryDoc.data();
+          const scheduleStart = entry.startHour || 0;
+          const scheduleEnd = entry.endHour || 0;
+          
+          // Check if times overlap
+          // Times overlap if: (start1 < end2) AND (start2 < end1)
+          const hasOverlap = (reservationStart < scheduleEnd) && (scheduleStart < reservationEnd);
+          
+          if (hasOverlap) {
+            conflicts.push({
+              title: entry.title || entry.courseCode || 'Course',
+              courseCode: entry.courseCode || '',
+              instructor: entry.instructor || deanName,
+              college,
+              section: sectionName,
+              timeStart: `${Math.floor(scheduleStart)}:${String(Math.round((scheduleStart % 1) * 60)).padStart(2, '0')}`,
+              timeEnd: `${Math.floor(scheduleEnd)}:${String(Math.round((scheduleEnd % 1) * 60)).padStart(2, '0')}`,
+              dayOfWeek: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'][dayIndex],
+            });
+          }
+        });
+      }
+    }
+
+    console.log('[checkReservationConflict] Found', conflicts.length, 'conflicts');
+    
+    return {
+      hasConflict: conflicts.length > 0,
+      conflicts
+    };
+  } catch (err) {
+    console.error('[checkReservationConflict] Error:', err);
+    return { hasConflict: false, conflicts: [], error: err.message };
+  }
+}
