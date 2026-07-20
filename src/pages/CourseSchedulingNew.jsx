@@ -30,6 +30,7 @@ import {
   subscribeDeanSections,
   createDeanSection,
   deleteDeanSection,
+  resetMultipleDeansSchedules,
   entriesToGridBlocks,
   hourToTimeInput,
 } from '../services/plotScheduleService';
@@ -101,6 +102,10 @@ export default function CourseSchedulingNew() {
   // Access control state
   const [scheduleAccess, setScheduleAccess] = useState(null);
   const [showGrantAccessModal, setShowGrantAccessModal] = useState(false);
+  
+  // Reset schedules state
+  const [showResetSchedulesModal, setShowResetSchedulesModal] = useState(false);
+  const [selectedDeansForReset, setSelectedDeansForReset] = useState([]);
 
   const [scheduleTab, setScheduleTab] = useState('regular');
   const [semester, setSemester] = useState('1');
@@ -455,7 +460,7 @@ export default function CourseSchedulingNew() {
     const entry = {
       ...payload,
       day: dayIdx,
-      semester: scheduleTab === 'exam' ? Number(semester) : null, // Only store semester for exam schedule
+      semester: Number(semester), // Always store semester for both regular and exam schedules
       section: selectedSection,
       studentCategory: scheduleTab === 'exam' ? selectedStudentCategory : null, // Store category for exam filtering
       examPeriod: scheduleTab === 'exam' ? selectedExamPeriod : null, // Store exam period (p1, p2, p3, rbe)
