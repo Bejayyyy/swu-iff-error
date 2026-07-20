@@ -1,6 +1,8 @@
 export const APPROVAL_TYPES = {
   ACADEMIC: 'academic',
   NON_ACADEMIC: 'non-academic',
+  DEAN_MANAGED_ACADEMIC: 'dean-managed-academic', // For academic rooms managed by specific deans
+  DEAN_MANAGED_NON_ACADEMIC: 'dean-managed-non-academic', // For non-academic rooms managed by specific deans
 };
 
 export const RESERVATION_STATUS = {
@@ -69,14 +71,36 @@ export function filterReservationsForRole(reservations, role, profile) {
       return false; // Still waiting, hasn't reached this role yet
     }
     
-    // For deans, additionally filter by college
+    // For deans, check if this is assigned to them specifically (custom manager)
     if (role === 'dean') {
-      if (profile.college && reservation.college) {
-        const normalizedProfileCollege = (profile.college || '').trim().toLowerCase();
-        const normalizedReservationCollege = (reservation.college || '').trim().toLowerCase();
-        return normalizedProfileCollege === normalizedReservationCollege;
+      // Check if this dean is the room manager for this reservation
+      const roomManagerRecord = myRecord.customManagerUid ? myRecord : null;
+      if (roomManagerRecord && roomManagerRecord.customManagerUid === profile.uid) {
+        return true; // This dean is the room manager
       }
-      return true; // No college filter
+      
+      // If reservation has a room-manager-dean role, check if it matches
+      const roomManagerStep = reservation.approvalRecords.find(r => r.roleId === 'room-manager-dean');
+      if (roomManagerStep?.customManagerUid) {
+        if (roomManagerStep.customManagerUid === profile.uid) {
+          // This is the room manager dean's step
+          return roomManagerStep.status === APPROVAL_RECORD_STATUS.PENDING || 
+                 roomManagerStep.status === APPROVAL_RECORD_STATUS.APPROVED ||
+                 roomManagerStep.status === APPROVAL_RECORD_STATUS.REJECTED;
+        }
+      }
+      
+      // For standard college dean role (not room manager)
+      if (myRecord.roleId === 'dean' && !myRecord.customManagerUid) {
+        if (profile.college && reservation.college) {
+          const normalizedProfileCollege = (profile.college || '').trim().toLowerCase();
+          const normalizedReservationCollege = (reservation.college || '').trim().toLowerCase();
+          return normalizedProfileCollege === normalizedReservationCollege;
+        }
+        return true; // No college filter
+      }
+      
+      return false;
     }
     
     return true;

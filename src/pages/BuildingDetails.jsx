@@ -9,6 +9,7 @@ import AddRoomModal from '../components/modals/AddRoomModal';
 import AddFloorModal from '../components/modals/AddFloorModal';
 import EditBuildingModal from '../components/modals/EditBuildingModal';
 import EditRoomModal from '../components/modals/EditRoomModal';
+import EditFloorModal from '../components/modals/EditFloorModal';
 import { buildingSchedulesById } from '../data/mockSchedules';
 
 const statusBadge = { Available: 'badge-available', Occupied: 'badge-occupied', Maintenance: 'badge-maintenance' };
@@ -16,10 +17,10 @@ const statusBadge = { Available: 'badge-available', Occupied: 'badge-occupied', 
 export default function BuildingDetails() {
   const navigate = useNavigate();
   const { id } = useParams();
-  const { buildingList, buildingsLoading, updateBuilding } = useApp();
-  const { canManageBuildings, canEditRoom, canSubmitReservation } = useRolePermissions();
+  const { buildingList, buildingsLoading, updateBuilding, currentUser } = useApp();
+  const { canManageBuildings, canEditRoom, canSubmitReservation, isRegistrar } = useRolePermissions();
   const { openReservation, modals } = useRoomReservationFlow();
-  const isRegistrar = canManageBuildings();
+  const canManageBuilding = canManageBuildings();
   const building = buildingList.find((b) => String(b.id) === String(id));
 
   const [activeFloor, setActiveFloor] = useState(null);
@@ -27,6 +28,7 @@ export default function BuildingDetails() {
   const [showAddFloor, setShowAddFloor] = useState(false);
   const [showEditBuilding, setShowEditBuilding] = useState(false);
   const [editRoom, setEditRoom] = useState(null);
+  const [editFloor, setEditFloor] = useState(null);
 
   useEffect(() => {
     if (building?.floorData?.length) {
@@ -87,13 +89,13 @@ export default function BuildingDetails() {
           Back
         </button>
         <div className="flex gap-2 flex-wrap justify-end">
-          {isRegistrar && <button type="button" className="btn-outline-maroon flex items-center gap-2" style={{ borderRadius: 10 }} onClick={() => setShowAddFloor(true)}>
+          {canManageBuilding && <button type="button" className="btn-outline-maroon flex items-center gap-2" style={{ borderRadius: 10 }} onClick={() => setShowAddFloor(true)}>
             <Plus size={14} /> Add Floor
           </button>}
-          {isRegistrar && <button type="button" className="btn-maroon" style={{ borderRadius: 10 }} onClick={() => setShowAddRoom(true)} disabled={!floorEntry.floorId}>
+          {canManageBuilding && <button type="button" className="btn-maroon" style={{ borderRadius: 10 }} onClick={() => setShowAddRoom(true)} disabled={!floorEntry.floorId}>
             <Plus size={16} /> Add Room
           </button>}
-          {isRegistrar && <button type="button" className="btn-outline-maroon flex items-center gap-2" style={{ borderRadius: 10 }} onClick={() => setShowEditBuilding(true)}>
+          {canManageBuilding && <button type="button" className="btn-outline-maroon flex items-center gap-2" style={{ borderRadius: 10 }} onClick={() => setShowEditBuilding(true)}>
             <Edit2 size={14} /> Edit Building
           </button>}
         </div>
@@ -128,7 +130,7 @@ export default function BuildingDetails() {
         {building.floorData.length === 0 ? (
           <div className="text-center py-8">
             <p className="text-sm text-gray-500 mb-3">No floors yet. Add a floor to start adding rooms.</p>
-            {isRegistrar && <button type="button" className="btn-maroon text-sm" onClick={() => setShowAddFloor(true)}>Add Floor</button>}
+            {canManageBuilding && <button type="button" className="btn-maroon text-sm" onClick={() => setShowAddFloor(true)}>Add Floor</button>}
           </div>
         ) : (
           <>
@@ -151,9 +153,21 @@ export default function BuildingDetails() {
             </div>
 
             <div className="mb-6">
-              <h3 className="font-bold text-sm mb-1" style={{ color: '#2B3235' }}>
-                {floorEntry.label || `Floor ${activeFloor}`} Overview
-              </h3>
+              <div className="flex items-center justify-between mb-1">
+                <h3 className="font-bold text-sm" style={{ color: '#2B3235' }}>
+                  {floorEntry.label || `Floor ${activeFloor}`} Overview
+                </h3>
+                {canManageBuilding && (
+                  <button
+                    type="button"
+                    onClick={() => setEditFloor(floorEntry)}
+                    className="p-1.5 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-gray-500"
+                    title="Edit floor"
+                  >
+                    <Edit2 size={14} />
+                  </button>
+                )}
+              </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
                 {[
                   { label: 'Total Rooms', value: floorStats.total, color: '#2B3235' },
@@ -173,7 +187,7 @@ export default function BuildingDetails() {
             {floorData.rooms.length === 0 ? (
               <div className="text-center py-10 text-gray-400 text-sm">
                 No rooms on this floor yet.
-                {isRegistrar && <button type="button" onClick={() => setShowAddRoom(true)} className="block mx-auto mt-3 btn-maroon text-xs">
+                {canManageBuilding && <button type="button" onClick={() => setShowAddRoom(true)} className="block mx-auto mt-3 btn-maroon text-xs">
                   Add Room
                 </button>}
               </div>
@@ -245,7 +259,7 @@ export default function BuildingDetails() {
                         >
                           View
                         </button>
-                        {(isRegistrar || canEditRoom({ ...room, buildingId: building.id })) && <button
+                        {(canManageBuilding || canEditRoom({ ...room, buildingId: building.id })) && <button
                           type="button"
                           onClick={() => setEditRoom(room)}
                           className="p-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-gray-500"
@@ -260,7 +274,7 @@ export default function BuildingDetails() {
               </div>
             )}
 
-            {isRegistrar && <button
+            {canManageBuilding && <button
               type="button"
               onClick={() => setShowAddRoom(true)}
               disabled={!floorEntry.floorId}
@@ -308,34 +322,43 @@ export default function BuildingDetails() {
 
       {modals}
 
-      {isRegistrar && showAddRoom && floorEntry.floorId && (
+      {canManageBuilding && showAddRoom && floorEntry.floorId && (
         <AddRoomModal
           buildingId={building.id}
           floorId={floorEntry.floorId}
           floor={activeFloor}
+          floorManagedBy={floorEntry.managedBy}
           onClose={() => setShowAddRoom(false)}
         />
       )}
-      {isRegistrar && showAddFloor && (
+      {canManageBuilding && showAddFloor && (
         <AddFloorModal
           buildingId={building.id}
           buildingName={building.name}
           onClose={() => setShowAddFloor(false)}
         />
       )}
-      {isRegistrar && showEditBuilding && (
+      {canManageBuilding && showEditBuilding && (
         <EditBuildingModal
           building={building}
           onClose={() => setShowEditBuilding(false)}
           onSave={updateBuilding}
         />
       )}
-      {isRegistrar && editRoom && floorEntry.floorId && (
+      {canManageBuilding && editRoom && floorEntry.floorId && (
         <EditRoomModal
           room={editRoom}
           buildingId={building.id}
           floorId={floorEntry.floorId}
+          floorManagedBy={floorEntry.managedBy}
           onClose={() => setEditRoom(null)}
+        />
+      )}
+      {canManageBuilding && editFloor && (
+        <EditFloorModal
+          buildingId={building.id}
+          floor={editFloor}
+          onClose={() => setEditFloor(null)}
         />
       )}
     </Layout>

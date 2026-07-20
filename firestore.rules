@@ -47,6 +47,23 @@ service cloud.firestore {
       return isStaffRole(role) || roleDefinitionExists(role);
     }
 
+    function hasPermission(permission) {
+      return isSignedIn()
+        && userDocExists()
+        && userDoc().data.status == 'active'
+        && (
+          userDoc().data.role == 'registrar'
+          || (
+            userDoc().data.permissions != null
+            && permission in userDoc().data.permissions
+          )
+        );
+    }
+
+    function canManageBuildings() {
+      return hasPermission('buildings.manage');
+    }
+
     function isMainRole() {
       return isSignedIn() && userDocExists() && (
         userDoc().data.role == 'registrar'
@@ -251,27 +268,40 @@ service cloud.firestore {
 
     match /buildings/{buildingId} {
       allow read: if isMainRole() && isPhinmaedEmail();
-      allow write: if isRegistrar() && isPhinmaedEmail();
+      allow write: if (isRegistrar() || canManageBuildings()) && isPhinmaedEmail();
 
       match /floors/{floorId} {
         allow read: if isMainRole() && isPhinmaedEmail();
-        allow write: if isRegistrar() && isPhinmaedEmail();
+        allow write: if (isRegistrar() || canManageBuildings()) && isPhinmaedEmail();
+        // Allow dean to update floor they manage (for updating manager settings) - ONLY REGISTRAR CAN ASSIGN
+        allow update: if isDean() && isPhinmaedEmail() 
+          && userDocExists()
+          && resource.data.managedBy == request.auth.uid
+          && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['managedBy', 'managedByName']);
 
         match /rooms/{roomId} {
           allow read: if isMainRole() && isPhinmaedEmail();
-          allow write: if isRegistrar() && isPhinmaedEmail();
+          allow write: if (isRegistrar() || canManageBuildings()) && isPhinmaedEmail();
+          // Allow dean to update room they manage (for updating details) - ONLY REGISTRAR CAN ASSIGN MANAGERS
+          allow update: if isDean() && isPhinmaedEmail()
+            && userDocExists()
+            && (
+              resource.data.managedBy == request.auth.uid
+              || get(/databases/$(database)/documents/buildings/$(buildingId)/floors/$(floorId)).data.managedBy == request.auth.uid
+            )
+            && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['managedBy', 'managedByName']);
         }
       }
     }
 
     match /{path=**}/floors/{floorId} {
       allow read: if isMainRole() && isPhinmaedEmail();
-      allow write: if isRegistrar() && isPhinmaedEmail();
+      allow write: if (isRegistrar() || canManageBuildings()) && isPhinmaedEmail();
     }
 
     match /{path=**}/rooms/{roomId} {
       allow read: if isMainRole() && isPhinmaedEmail();
-      allow write: if isRegistrar() && isPhinmaedEmail();
+      allow write: if (isRegistrar() || canManageBuildings()) && isPhinmaedEmail();
     }
 
     match /approval_workflows/{workflowId} {
@@ -280,10 +310,48 @@ service cloud.firestore {
     }
 
     match /room_reservations/{reservationId} {
-      allow read: if isMainRole() && isPhinmaedEmail();
+      allow read: if isMainRole() && isPhinmaedEmail() && (
+        isRegistrar()
+        || resource.data.createdByUid == request.auth.uid
+        || (
+          isDean() 
+          && userDocExists()
+          && (
+            // Standard workflow: dean's college matches
+            (resource.data.college != null && (
+              resource.data.college == userDoc().data.college
+              || resource.data.college == userDoc().data.department
+            ))
+            // Custom manager workflow: dean is assigned to this room/floor
+            || (resource.data.customManagerUid != null && resource.data.customManagerUid == request.auth.uid)
+          )
+        )
+        || (
+          hasRole('gsd')
+          || hasRole('organization_head')
+          || hasRole('teacher')
+          || hasRole('student_life')
+        )
+      );
       allow create: if isMainRole() && isPhinmaedEmail()
         && request.resource.data.createdByUid == request.auth.uid;
-      allow update: if isMainRole() && isPhinmaedEmail();
+      allow update: if isMainRole() && isPhinmaedEmail() && (
+        isRegistrar()
+        || (
+          isDean()
+          && userDocExists()
+          && (
+            // Standard workflow: dean's college matches
+            (resource.data.college != null && (
+              resource.data.college == userDoc().data.college
+              || resource.data.college == userDoc().data.department
+            ))
+            // Custom manager workflow: dean is assigned to this room/floor
+            || (resource.data.customManagerUid != null && resource.data.customManagerUid == request.auth.uid)
+          )
+        )
+        || (resource.data.createdByUid == request.auth.uid)
+      );
       allow delete: if isPhinmaedEmail() && (
         isRegistrar()
         || (isMainRole() && resource.data.createdByUid == request.auth.uid)

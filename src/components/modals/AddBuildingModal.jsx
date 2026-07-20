@@ -3,10 +3,12 @@ import { X, Plus, Minus } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 
 export default function AddBuildingModal({ onClose }) {
-  const { addBuilding } = useApp();
+  const { addBuilding, currentUser } = useApp();
   const [form, setForm] = useState({ name: '', manager: '', floors: ['Floor 1'] });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  const isRegistrar = currentUser?.role === 'registrar';
 
   const addFloorRow = () =>
     setForm((f) => ({ ...f, floors: [...f.floors, `Floor ${f.floors.length + 1}`] }));
@@ -62,17 +64,19 @@ export default function AddBuildingModal({ onClose }) {
             />
           </div>
 
-          <div className="mb-4">
-            <label className="form-label">
-              Building Manager <span className="font-normal text-gray-400">(Optional)</span>
-            </label>
-            <input
-              className="form-input"
-              placeholder="Leave blank if no manager assigned"
-              value={form.manager}
-              onChange={(e) => setForm((f) => ({ ...f, manager: e.target.value }))}
-            />
-          </div>
+          {isRegistrar && (
+            <div className="mb-4">
+              <label className="form-label">
+                Building Manager <span className="font-normal text-gray-400">(Optional)</span>
+              </label>
+              <input
+                className="form-input"
+                placeholder="Leave blank if no manager assigned"
+                value={form.manager}
+                onChange={(e) => setForm((f) => ({ ...f, manager: e.target.value }))}
+              />
+            </div>
+          )}
 
           <div className="mb-6">
             <div className="flex items-center justify-between mb-3">

@@ -3,6 +3,7 @@ import {
   collectionGroup,
   doc,
   getDoc,
+  getDocs,
   onSnapshot,
   serverTimestamp,
   setDoc,
@@ -36,6 +37,8 @@ function mapRoomDoc(roomDoc) {
     floorId: data.floorId,
     floorNumber: data.floorNumber,
     buildingId: data.buildingId,
+    managedBy: data.managedBy || null,
+    managedByName: data.managedByName || null,
     // Maintenance fields
     maintenanceStatus: data.maintenanceStatus || 'operational',
     maintenanceStartDate: data.maintenanceStartDate || null,
@@ -58,6 +61,8 @@ function mergeBuildingsSnapshot(buildingsMap, floorsByBuilding, roomsByFloorKey)
           floor: f.floorNumber,
           floorId: f.id,
           label: f.label || `Floor ${f.floorNumber}`,
+          managedBy: f.managedBy || null,
+          managedByName: f.managedByName || null,
           rooms,
         };
       });
@@ -171,7 +176,7 @@ export async function createBuilding({ name, manager, floorNames, image, contact
   return buildingRef.id;
 }
 
-export async function addFloorToBuilding(buildingId, label) {
+export async function addFloorToBuilding(buildingId, floorData) {
   const buildingRef = doc(db, COLLECTIONS.BUILDINGS, buildingId);
   const buildingSnap = await getDoc(buildingRef);
   if (!buildingSnap.exists()) throw new Error('Building not found.');
@@ -180,10 +185,17 @@ export async function addFloorToBuilding(buildingId, label) {
   const floorNumber = currentFloors + 1;
   const floorRef = doc(collection(buildingRef, COLLECTIONS.FLOORS));
 
+  // Handle both old format (string) and new format (object)
+  const label = typeof floorData === 'string' ? floorData : floorData.label;
+  const managedBy = typeof floorData === 'object' ? floorData.managedBy : null;
+  const managedByName = typeof floorData === 'object' ? floorData.managedByName : null;
+
   await setDoc(floorRef, {
     buildingId,
     floorNumber,
     label: (label || `Floor ${floorNumber}`).trim(),
+    managedBy: managedBy || null,
+    managedByName: managedByName || null,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
@@ -225,6 +237,8 @@ export async function addRoomToFloor(buildingId, floorId, floorNumber, room) {
     status: room.status || 'Available',
     capacity: Number(room.capacity) || 0,
     equipment: room.equipment || [],
+    managedBy: room.managedBy || null,
+    managedByName: room.managedByName || null,
     // Maintenance fields
     maintenanceStatus: 'operational', // operational, under-maintenance
     maintenanceStartDate: null,
@@ -264,6 +278,43 @@ export async function updateRoomRecord(buildingId, floorId, roomDocId, patch) {
   if (patch.status !== undefined) updates.status = patch.status;
   if (patch.capacity !== undefined) updates.capacity = Number(patch.capacity) || 0;
   if (patch.equipment !== undefined) updates.equipment = patch.equipment;
+  if (patch.managedBy !== undefined) updates.managedBy = patch.managedBy || null;
+  if (patch.managedByName !== undefined) updates.managedByName = patch.managedByName || null;
 
   await updateDoc(roomRef, updates);
+}
+
+export async function updateFloorRecord(buildingId, floorId, patch) {
+  const floorRef = doc(db, COLLECTIONS.BUILDINGS, buildingId, COLLECTIONS.FLOORS, floorId);
+
+  const updates = { updatedAt: serverTimestamp() };
+  if (patch.label !== undefined) updates.label = patch.label.trim();
+  if (patch.managedBy !== undefined) updates.managedBy = patch.managedBy || null;
+  if (patch.managedByName !== undefined) updates.managedByName = patch.managedByName || null;
+
+  await updateDoc(floorRef, updates);
+}
+
+export async function updateAllRoomsOnFloor(buildingId, floorId, patch) {
+  const floorRef = doc(db, COLLECTIONS.BUILDINGS, buildingId, COLLECTIONS.FLOORS, floorId);
+  const roomsCollection = collection(floorRef, COLLECTIONS.ROOMS);
+  
+  // Get all rooms on this floor
+  const roomsSnapshot = await getDocs(roomsCollection);
+  
+  if (roomsSnapshot.empty) return { updated: 0 };
+  
+  // Batch update all rooms
+  const batch = writeBatch(db);
+  const updates = { updatedAt: serverTimestamp() };
+  
+  if (patch.managedBy !== undefined) updates.managedBy = patch.managedBy || null;
+  if (patch.managedByName !== undefined) updates.managedByName = patch.managedByName || null;
+  
+  roomsSnapshot.docs.forEach((roomDoc) => {
+    batch.update(roomDoc.ref, updates);
+  });
+  
+  await batch.commit();
+  return { updated: roomsSnapshot.size };
 }

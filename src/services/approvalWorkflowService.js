@@ -101,11 +101,24 @@ export async function seedDefaultWorkflowsIfEmpty() {
   if (!snap.empty) return false;
 
   const defaults = [
+    // Standard Academic Workflow
     { approvalType: APPROVAL_TYPES.ACADEMIC, roleId: ROLES.ORGANIZATION_HEAD, levelNumber: 1 },
     { approvalType: APPROVAL_TYPES.ACADEMIC, roleId: ROLES.DEAN, levelNumber: 2 },
     { approvalType: APPROVAL_TYPES.ACADEMIC, roleId: ROLES.REGISTRAR, levelNumber: 3 },
+    
+    // Standard Non-Academic Workflow
     { approvalType: APPROVAL_TYPES.NON_ACADEMIC, roleId: ROLES.STUDENT_LIFE, levelNumber: 1 },
     { approvalType: APPROVAL_TYPES.NON_ACADEMIC, roleId: ROLES.REGISTRAR, levelNumber: 2 },
+    
+    // Dean-Managed Academic Rooms Workflow (for academic rooms assigned to specific deans)
+    { approvalType: APPROVAL_TYPES.DEAN_MANAGED_ACADEMIC, roleId: ROLES.DEAN, levelNumber: 1, roleLabel: 'College Dean' },
+    { approvalType: APPROVAL_TYPES.DEAN_MANAGED_ACADEMIC, roleId: ROLES.GSD, levelNumber: 2 },
+    { approvalType: APPROVAL_TYPES.DEAN_MANAGED_ACADEMIC, roleId: 'room-manager-dean', levelNumber: 3, roleLabel: 'Room Manager Dean' },
+    
+    // Dean-Managed Non-Academic Rooms Workflow (for non-academic rooms assigned to specific deans)
+    { approvalType: APPROVAL_TYPES.DEAN_MANAGED_NON_ACADEMIC, roleId: ROLES.STUDENT_LIFE, levelNumber: 1 },
+    { approvalType: APPROVAL_TYPES.DEAN_MANAGED_NON_ACADEMIC, roleId: ROLES.GSD, levelNumber: 2 },
+    { approvalType: APPROVAL_TYPES.DEAN_MANAGED_NON_ACADEMIC, roleId: 'room-manager-dean', levelNumber: 3, roleLabel: 'Room Manager Dean' },
   ];
 
   const batch = writeBatch(db);
@@ -113,7 +126,7 @@ export async function seedDefaultWorkflowsIfEmpty() {
     const ref = doc(workflowCollection());
     batch.set(ref, {
       ...level,
-      roleLabel: getRoleLabelById(level.roleId),
+      roleLabel: level.roleLabel || getRoleLabelById(level.roleId),
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });

@@ -1,9 +1,12 @@
 import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Users } from 'lucide-react';
+import { Users, Settings } from 'lucide-react';
 import Layout from '../components/Layout';
 import { useApp } from '../context/AppContext';
+import { useAuth } from '../context/AuthContext';
+import { ROLES } from '../firebase/constants';
 import { StatusFilterRow, PillFilterRow } from '../components/FilterControls';
+import RoomManagerSettingsModal from '../components/modals/RoomManagerSettingsModal';
 
 const DAY_START = 7;
 const DAY_END = 20;
@@ -63,9 +66,13 @@ function TimelineBar({ segments }) {
 export default function RoomAvailability() {
   const navigate = useNavigate();
   const { buildingList } = useApp();
+  const { profile } = useAuth();
+  const isRegistrar = profile?.role === ROLES.REGISTRAR;
+  
   const [statusFilter, setStatusFilter] = useState('All');
   const [buildingKey, setBuildingKey] = useState('all');
   const [floorKey, setFloorKey] = useState('all');
+  const [managerModalRoom, setManagerModalRoom] = useState(null);
 
   const buildingOptions = useMemo(() => {
     const opts = [{ value: 'all', label: 'All Buildings' }];
@@ -148,48 +155,92 @@ export default function RoomAvailability() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {visibleRooms.map((room) => (
-            <div key={`${room.buildingId}-${room.id}`} className="bg-white rounded-[10px] shadow-md border border-gray-100 p-5 flex flex-col">
-              <div className="flex items-start justify-between mb-3">
-                <div>
-                  <h3 className="font-black text-base" style={{ color: '#2B3235' }}>{room.id}</h3>
-                  <p className="text-xs font-semibold mt-0.5" style={{ color: '#2B3235', opacity: 0.72 }}>{room.type}</p>
+          {visibleRooms.map((room) => {
+            // Get floor data to check floor manager
+            const building = buildingList.find(b => b.id === room.buildingId);
+            const floorData = building?.floorData.find(f => f.floor === room.floor);
+            const floorManagedBy = floorData?.managedBy || null;
+            
+            return (
+              <div key={`${room.buildingId}-${room.id}`} className="bg-white rounded-[10px] shadow-md border border-gray-100 p-5 flex flex-col">
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex-1">
+                    <h3 className="font-black text-base" style={{ color: '#2B3235' }}>{room.id}</h3>
+                    <p className="text-xs font-semibold mt-0.5" style={{ color: '#2B3235', opacity: 0.72 }}>{room.type}</p>
+                    {(room.managedByName || floorData?.managedByName) && (
+                      <div className="mt-2 flex items-center gap-1.5">
+                        <Users size={10} className="text-blue-600" />
+                        <p className="text-[10px] font-bold text-blue-600">
+                          Managed by {room.managedByName || floorData?.managedByName}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={
+                        room.status === 'Available'
+                          ? 'badge-available'
+                          : room.status === 'Occupied'
+                          ? 'badge-occupied'
+                          : 'badge-maintenance'
+                      }
+                    >
+                      {room.status}
+                    </span>
+                    {isRegistrar && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setManagerModalRoom({ ...room, floorId: floorData?.floorId, floorManagedBy });
+                        }}
+                        className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
+                        title="Manager Settings"
+                      >
+                        <Settings size={14} className="text-gray-600" />
+                      </button>
+                    )}
+                  </div>
                 </div>
-                <span
-                  className={
-                    room.status === 'Available'
-                      ? 'badge-available'
-                      : room.status === 'Occupied'
-                      ? 'badge-occupied'
-                      : 'badge-maintenance'
+                <div className="flex items-center gap-2 mb-4">
+                  <div className="w-9 h-9 flex items-center justify-center" style={{ background: '#FFFBFB', borderRadius: 10 }}>
+                    <Users size={18} style={{ color: '#800000' }} />
+                  </div>
+                  <span className="text-sm font-bold" style={{ color: '#2B3235' }}>{room.capacity} Seats</span>
+                </div>
+                <TimelineBar segments={segmentsFor(room.id)} />
+                <button
+                  type="button"
+                  className="btn-maroon w-full justify-center mt-5 py-2.5 text-sm"
+                  style={{ borderRadius: 10 }}
+                  onClick={() =>
+                    navigate(`/room/${room.id}`, {
+                      state: { room, buildingId: room.buildingId, buildingName: room.buildingName, floor: room.floor },
+                    })
                   }
                 >
-                  {room.status}
-                </span>
+                  See Room Details
+                </button>
               </div>
-              <div className="flex items-center gap-2 mb-4">
-                <div className="w-9 h-9 flex items-center justify-center" style={{ background: '#FFFBFB', borderRadius: 10 }}>
-                  <Users size={18} style={{ color: '#800000' }} />
-                </div>
-                <span className="text-sm font-bold" style={{ color: '#2B3235' }}>{room.capacity} Seats</span>
-              </div>
-              <TimelineBar segments={segmentsFor(room.id)} />
-              <button
-                type="button"
-                className="btn-maroon w-full justify-center mt-5 py-2.5 text-sm"
-                style={{ borderRadius: 10 }}
-                onClick={() =>
-                  navigate(`/room/${room.id}`, {
-                    state: { room, buildingId: room.buildingId, buildingName: room.buildingName, floor: room.floor },
-                  })
-                }
-              >
-                See Room Details
-              </button>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
+
+      {managerModalRoom && (
+        <RoomManagerSettingsModal
+          room={managerModalRoom}
+          buildingId={managerModalRoom.buildingId}
+          floorId={managerModalRoom.floorId}
+          floorManagedBy={managerModalRoom.floorManagedBy}
+          onClose={() => setManagerModalRoom(null)}
+          onSuccess={() => {
+            // Refresh handled by real-time subscription
+            setManagerModalRoom(null);
+          }}
+        />
+      )}
     </Layout>
   );
 }

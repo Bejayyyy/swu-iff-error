@@ -38,13 +38,25 @@ export default function WorkflowLevelModal({
   }, []);
 
   const selectableRoles = useMemo(() => {
-    if (!initial?.roleId) return roleOptions;
-    if (roleOptions.some((role) => role.value === initial.roleId)) return roleOptions;
+    let roles = [...roleOptions];
+    
+    // Add special room-manager-dean option for dean-managed workflow
+    if (form.approvalType === APPROVAL_TYPES.DEAN_MANAGED) {
+      roles.push({
+        value: 'room-manager-dean',
+        label: 'Room Manager Dean',
+        userCount: '(Dynamic)',
+        isSpecial: true,
+      });
+    }
+    
+    if (!initial?.roleId) return roles;
+    if (roles.some((role) => role.value === initial.roleId)) return roles;
     return [
       { value: initial.roleId, label: initial.roleLabel || initial.roleId, userCount: 0 },
-      ...roleOptions,
+      ...roles,
     ];
-  }, [roleOptions, initial]);
+  }, [roleOptions, initial, form.approvalType]);
 
   useEffect(() => {
     if (form.roleId || !selectableRoles.length) return;
@@ -97,6 +109,7 @@ export default function WorkflowLevelModal({
             >
               <option value={APPROVAL_TYPES.ACADEMIC}>Academic</option>
               <option value={APPROVAL_TYPES.NON_ACADEMIC}>Non-Academic</option>
+              <option value={APPROVAL_TYPES.DEAN_MANAGED}>Dean-Managed Rooms</option>
             </select>
           </div>
           <div>

@@ -10,6 +10,9 @@ import { useModal } from '../../hooks/useModal';
 import { ModalRenderer } from './ModalProvider';
 import LoadingModal from './LoadingModal';
 import ApprovalTimeline from '../reservations/ApprovalTimeline';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../../firebase/firebase';
+import { COLLECTIONS } from '../../firebase/constants';
 
 const emptyForm = {
   nameOfOrg: '',
@@ -61,24 +64,85 @@ export default function RoomReservationModal({ onClose, eventType, prefill = {} 
 
   useEffect(() => {
     let cancelled = false;
-    fetchWorkflowLevels(eventType)
-      .then((levels) => {
+    
+    const loadWorkflowPreview = async () => {
+      try {
+        // Check if the selected room/floor has a manager
+        let roomManager = null;
+        let roomManagerName = null;
+        
+        if (prefill.buildingId && prefill.floorId && prefill.roomDocId) {
+          // Check room manager
+          const buildingRef = doc(db, COLLECTIONS.BUILDINGS, prefill.buildingId);
+          const floorRef = doc(buildingRef, COLLECTIONS.FLOORS, prefill.floorId);
+          const roomRef = doc(floorRef, COLLECTIONS.ROOMS, prefill.roomDocId);
+          
+          const roomSnap = await getDoc(roomRef);
+          if (roomSnap.exists()) {
+            const roomData = roomSnap.data();
+            roomManager = roomData.managedBy;
+            roomManagerName = roomData.managedByName;
+            
+            // If room doesn't have manager, check floor
+            if (!roomManager) {
+              const floorSnap = await getDoc(floorRef);
+              if (floorSnap.exists()) {
+                const floorData = floorSnap.data();
+                roomManager = floorData.managedBy;
+                roomManagerName = floorData.managedByName;
+              }
+            }
+          }
+        }
+        
+        // Determine which workflow to use
+        let workflowType = eventType;
+        if (roomManager && roomManagerName) {
+          // Use dean-managed workflow based on reservation type
+          workflowType = eventType === APPROVAL_TYPES.ACADEMIC 
+            ? APPROVAL_TYPES.DEAN_MANAGED_ACADEMIC 
+            : APPROVAL_TYPES.DEAN_MANAGED_NON_ACADEMIC;
+        }
+        
+        const levels = await fetchWorkflowLevels(workflowType);
+        
         if (cancelled) return;
-        setWorkflowPreview(
-          levels.map((level, index) => ({
-            id: level.id,
-            levelNumber: level.levelNumber,
-            roleId: level.roleId,
-            roleLabel: level.roleLabel,
-            status: index === 0 ? 'Pending' : 'Waiting',
-          })),
-        );
-      })
-      .catch(() => {
+        
+        // Map levels to preview records
+        let previewRecords = levels.map((level, index) => ({
+          id: level.id,
+          levelNumber: level.levelNumber,
+          roleId: level.roleId,
+          roleLabel: level.roleLabel,
+          status: index === 0 ? 'Pending' : 'Waiting',
+        }));
+        
+        // If using dean-managed workflow, replace room-manager-dean placeholder
+        if ((workflowType === APPROVAL_TYPES.DEAN_MANAGED_ACADEMIC || 
+             workflowType === APPROVAL_TYPES.DEAN_MANAGED_NON_ACADEMIC) && 
+            roomManager && roomManagerName) {
+          previewRecords = previewRecords.map(record => {
+            if (record.roleId === 'room-manager-dean') {
+              return {
+                ...record,
+                roleLabel: `${roomManagerName} (Room Manager)`,
+              };
+            }
+            return record;
+          });
+        }
+        
+        setWorkflowPreview(previewRecords);
+      } catch (err) {
+        console.error('Error loading workflow preview:', err);
         if (!cancelled) setWorkflowPreview([]);
-      });
+      }
+    };
+    
+    loadWorkflowPreview();
+    
     return () => { cancelled = true; };
-  }, [eventType]);
+  }, [eventType, prefill.buildingId, prefill.floorId, prefill.roomDocId]);
 
   const selectedBuilding = useMemo(
     () => buildingList.find((b) => b.name === form.building || String(b.id) === String(prefill.buildingId)),

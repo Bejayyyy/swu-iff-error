@@ -1,19 +1,50 @@
-import React, { useState } from 'react';
-import { X } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, User } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import { subscribeStaffUsers, getActiveDeans } from '../../services/systemUserService';
+import { updateAllRoomsOnFloor } from '../../services/buildingService';
 
 export default function AddFloorModal({ buildingId, buildingName, onClose }) {
   const { addFloor } = useApp();
   const [label, setLabel] = useState('');
+  const [managedBy, setManagedBy] = useState(''); // Dean UID
+  const [applyToAllRooms, setApplyToAllRooms] = useState(false);
+  const [staffUsers, setStaffUsers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  const isRegistrar = currentUser?.role === 'registrar';
+
+  // Subscribe to staff users to get dean list
+  useEffect(() => {
+    return subscribeStaffUsers(
+      (users) => setStaffUsers(users),
+      (err) => console.error('Error loading staff:', err)
+    );
+  }, []);
+
+  const deans = getActiveDeans(staffUsers);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setLoading(true);
     try {
-      await addFloor(buildingId, label);
+      const floorData = {
+        label,
+        managedBy: managedBy || null, // null means managed by registrar
+        managedByName: managedBy ? deans.find(d => d.uid === managedBy)?.name : null,
+      };
+      const result = await addFloor(buildingId, floorData);
+      
+      // If "Apply to all rooms" is checked and floor was created successfully
+      if (applyToAllRooms && managedBy && result?.floorId) {
+        await updateAllRoomsOnFloor(buildingId, result.floorId, {
+          managedBy: managedBy,
+          managedByName: floorData.managedByName,
+        });
+      }
+      
       onClose();
     } catch (err) {
       setError(err.message || 'Failed to add floor.');
@@ -36,13 +67,62 @@ export default function AddFloorModal({ buildingId, buildingName, onClose }) {
           </p>
         )}
         <form onSubmit={handleSubmit}>
-          <label className="form-label">Floor label</label>
-          <input
-            className="form-input mb-6"
-            placeholder="e.g., Ground Floor, Floor 5"
-            value={label}
-            onChange={(e) => setLabel(e.target.value)}
-          />
+          <div className="mb-4">
+            <label className="form-label">Floor label</label>
+            <input
+              className="form-input"
+              placeholder="e.g., Ground Floor, Floor 5"
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+              required
+            />
+          </div>
+          
+          {isRegistrar && (
+            <div className="mb-6">
+              <label className="form-label flex items-center gap-2">
+                <User size={14} />
+                Floor Manager (Optional)
+              </label>
+              <select
+                className="form-input"
+                value={managedBy}
+                onChange={(e) => setManagedBy(e.target.value)}
+              >
+                <option value="">Managed by Registrar (Default)</option>
+                <optgroup label="Delegate to Dean">
+                  {deans.map((dean) => (
+                    <option key={dean.uid} value={dean.uid}>
+                      {dean.name} {dean.department ? `(${dean.department})` : ''}
+                    </option>
+                  ))}
+                </optgroup>
+              </select>
+              <p className="text-[10px] text-gray-500 mt-1">
+                If a dean is assigned, room reservations on this floor will be approved by that dean instead of the registrar.
+              </p>
+              
+              {managedBy && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mt-3">
+                  <label className="flex items-start gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={applyToAllRooms}
+                      onChange={(e) => setApplyToAllRooms(e.target.checked)}
+                      className="mt-0.5"
+                    />
+                    <div>
+                      <span className="text-xs font-bold text-blue-900">Apply to all existing rooms</span>
+                      <p className="text-[10px] text-blue-700 mt-0.5">
+                        Update all rooms on this floor to be managed by this dean
+                      </p>
+                    </div>
+                  </label>
+                </div>
+              )}
+            </div>
+          )}
+          
           <div className="flex gap-3">
             <button type="button" onClick={onClose} className="btn-outline-maroon flex-1" disabled={loading}>
               Cancel

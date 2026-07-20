@@ -9,6 +9,7 @@ import { useApp } from '../context/AppContext';
 import { getInitials } from '../firebase/authHelpers';
 import { getActivePendingRecord } from '../constants/approvalWorkflow';
 import { subscribeMaintenanceReports } from '../services/maintenanceService';
+import { getRoleLabel } from '../constants/rolePermissions';
 
 export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav = () => {} }) {
   const navigate = useNavigate();
@@ -21,9 +22,14 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [maintenanceReports, setMaintenanceReports] = useState([]);
+
+  const displayName = profile?.displayName || 'User';
+  const initials = profile?.initials || getInitials(profile?.displayName, profile?.email) || 'U';
+  const roleLabel = getRoleLabel(profile?.role) || 'User';
+
   const [profileForm, setProfileForm] = useState({
-    fullName: profile?.displayName || 'Registrar',
-    role: 'Registrar',
+    fullName: displayName,
+    role: roleLabel,
     email: profile?.email || '',
     phone: profile?.phone || '',
   });
@@ -175,9 +181,6 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
     });
   }, [requests, profile, maintenanceReports, isGsd]);
 
-  const displayName = profile?.displayName || 'Registrar';
-  const initials = profile?.initials || getInitials(profile?.displayName, profile?.email) || 'R';
-
   const handleSignOut = async () => {
     closeAll();
     await logout();
@@ -289,7 +292,7 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
             </div>
             <div className="text-left hidden sm:block">
               <p className="text-white text-xs font-bold leading-tight">{displayName}</p>
-              <p className="text-red-100 text-[10px] font-medium">Registrar</p>
+              <p className="text-red-100 text-[10px] font-medium">{roleLabel}</p>
             </div>
             <ChevronDown size={14} className="text-red-100 hidden sm:block" />
           </button>
@@ -297,7 +300,7 @@ export default function TopNav({ title, subtitle, isDesktop = true, onToggleNav 
             <div className="absolute right-0 top-14 w-48 bg-white shadow-xl border border-gray-100 z-50 overflow-hidden" style={{ borderRadius: r }}>
               <div className="px-4 py-3 border-b border-gray-100">
                 <p className="text-xs font-bold" style={{ color: '#2B3235' }}>{displayName}</p>
-                <p className="text-[11px]" style={{ color: '#2B3235', opacity: 0.55 }}>Registrar</p>
+                <p className="text-[11px]" style={{ color: '#2B3235', opacity: 0.55 }}>{roleLabel}</p>
               </div>
               <button
                 type="button"

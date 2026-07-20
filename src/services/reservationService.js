@@ -78,7 +78,8 @@ function buildApprovalRecords(workflowSnapshot, submit = true) {
 }
 
 export async function createRoomReservation(payload, { draft = false } = {}) {
-  const approvalType = payload.type === APPROVAL_TYPES.ACADEMIC
+  const isAcademic = payload.type === APPROVAL_TYPES.ACADEMIC;
+  const approvalType = isAcademic
     ? APPROVAL_TYPES.ACADEMIC
     : APPROVAL_TYPES.NON_ACADEMIC;
 
@@ -92,7 +93,122 @@ export async function createRoomReservation(payload, { draft = false } = {}) {
     });
   }
 
-  const workflowSnapshot = await getWorkflowSnapshot(approvalType);
+  // Check if room/floor has a custom manager (dean delegation)
+  let customManagerUid = null;
+  let customManagerName = null;
+  let workflowSnapshot;
+  let useDeanManagedWorkflow = false;
+
+  if (payload.buildingId && payload.floorId && payload.roomId) {
+    try {
+      // Try to get room and floor manager info
+      const buildingRef = doc(db, COLLECTIONS.BUILDINGS, payload.buildingId);
+      const floorRef = doc(buildingRef, COLLECTIONS.FLOORS, payload.floorId);
+      const roomRef = doc(floorRef, COLLECTIONS.ROOMS, payload.roomId);
+      
+      const roomSnap = await getDoc(roomRef);
+      if (roomSnap.exists()) {
+        const roomData = roomSnap.data();
+        customManagerUid = roomData.managedBy;
+        customManagerName = roomData.managedByName;
+        
+        // If room doesn't have manager, check floor
+        if (!customManagerUid) {
+          const floorSnap = await getDoc(floorRef);
+          if (floorSnap.exists()) {
+            const floorData = floorSnap.data();
+            customManagerUid = floorData.managedBy;
+            customManagerName = floorData.managedByName;
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Error checking room/floor manager:', err);
+      // Continue with standard workflow if error
+    }
+  }
+
+  // If custom manager exists, use appropriate dean-managed workflow
+  if (customManagerUid && customManagerName) {
+    useDeanManagedWorkflow = true;
+    
+    // Determine which dean-managed workflow to use based on reservation type
+    const deanManagedType = isAcademic 
+      ? APPROVAL_TYPES.DEAN_MANAGED_ACADEMIC 
+      : APPROVAL_TYPES.DEAN_MANAGED_NON_ACADEMIC;
+    
+    // Get the configurable dean-managed workflow
+    workflowSnapshot = await getWorkflowSnapshot(deanManagedType);
+    
+    // Replace the room manager placeholder with actual manager info
+    workflowSnapshot = workflowSnapshot.map(level => {
+      if (level.roleId === 'room-manager-dean') {
+        return {
+          ...level,
+          roleLabel: `${customManagerName} (Room Manager)`,
+          customManagerUid,
+          customManagerName,
+        };
+      }
+      return level;
+    });
+
+    // If no dean-managed workflow configured, fall back to default workflow
+    if (!workflowSnapshot || workflowSnapshot.length === 0) {
+      if (isAcademic) {
+        workflowSnapshot = [
+          {
+            levelNumber: 1,
+            roleId: 'dean',
+            roleLabel: 'College Dean',
+            workflowId: 'dean-managed-fallback',
+          },
+          {
+            levelNumber: 2,
+            roleId: 'gsd',
+            roleLabel: 'GSD',
+            workflowId: 'dean-managed-fallback',
+          },
+          {
+            levelNumber: 3,
+            roleId: 'room-manager-dean',
+            roleLabel: `${customManagerName} (Room Manager)`,
+            workflowId: 'dean-managed-fallback',
+            customManagerUid,
+            customManagerName,
+          },
+        ];
+      } else {
+        // Non-academic fallback
+        workflowSnapshot = [
+          {
+            levelNumber: 1,
+            roleId: 'student_life',
+            roleLabel: 'Student Life',
+            workflowId: 'dean-managed-fallback',
+          },
+          {
+            levelNumber: 2,
+            roleId: 'gsd',
+            roleLabel: 'GSD',
+            workflowId: 'dean-managed-fallback',
+          },
+          {
+            levelNumber: 3,
+            roleId: 'room-manager-dean',
+            roleLabel: `${customManagerName} (Room Manager)`,
+            workflowId: 'dean-managed-fallback',
+            customManagerUid,
+            customManagerName,
+          },
+        ];
+      }
+    }
+  } else {
+    // Use standard workflow from configuration
+    workflowSnapshot = await getWorkflowSnapshot(approvalType);
+  }
+
   const approvalRecords = buildApprovalRecords(workflowSnapshot, !draft);
   const ref = doc(reservationsCollection());
 
@@ -124,6 +240,8 @@ export async function createRoomReservation(payload, { draft = false } = {}) {
     roomDocId: payload.roomId || null, // Store explicitly for clarity
     floor: payload.floor ?? null,
     floorId: payload.floorId || null,
+    customManagerUid: customManagerUid || null, // Store for filtering
+    customManagerName: customManagerName || null,
     workflowSnapshot,
     approvalRecords,
     rejectReason: null,
@@ -189,7 +307,14 @@ export async function processApprovalAction({
     }
 
     const pending = records[pendingIndex];
-    if (pending.roleId !== approverRole) {
+    
+    // Check authorization
+    if (pending.roleId === 'room-manager-dean') {
+      // Room manager dean - check if the approver is the assigned manager
+      if (pending.customManagerUid !== approverUid) {
+        throw new Error('You are not authorized to act on this approval step. Only the assigned room manager can approve this.');
+      }
+    } else if (pending.roleId !== approverRole) {
       throw new Error('You are not authorized to act on this approval step.');
     }
 

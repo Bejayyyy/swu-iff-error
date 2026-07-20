@@ -1,22 +1,74 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import { useAuth } from '../../context/AuthContext';
+import { subscribeStaffUsers } from '../../services/systemUserService';
 
 const roomTypes = ['Classroom', 'Laboratory', 'Lecture Room', 'Seminar Room', 'Conference Room', 'Gymnasium'];
 const equipmentOptions = ['Projector', 'Whiteboard', 'Air Conditioning', 'Audio System', 'Computers', 'Smart Board', 'CCTV'];
 const statuses = ['Available', 'Occupied', 'Maintenance'];
 
-export default function EditRoomModal({ room, buildingId, floorId, onClose }) {
+export default function EditRoomModal({ room, buildingId, floorId, floorManagedBy, onClose }) {
   const { updateRoom } = useApp();
+  const { profile } = useAuth();
+  
   const [form, setForm] = useState({
     name: room?.name || room?.id || '',
     type: room?.type || '',
     capacity: room?.capacity ?? '',
     status: room?.status || 'Available',
     equipment: room?.equipment || [],
+    managedBy: room?.managedBy || floorManagedBy || '',
+    managedByName: room?.managedByName || '',
   });
+  const [equipmentChoices, setEquipmentChoices] = useState(() => {
+    // Merge existing equipment with preset options
+    const existing = room?.equipment || [];
+    const merged = [...equipmentOptions];
+    existing.forEach(item => {
+      if (!merged.includes(item)) {
+        merged.push(item);
+      }
+    });
+    return merged;
+  });
+  const [newEquipment, setNewEquipment] = useState('');
+  const [staffUsers, setStaffUsers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  const isRegistrar = profile?.role === 'registrar';
+
+  // Fetch staff users (deans)
+  useEffect(() => {
+    const unsub = subscribeStaffUsers((users) => {
+      setStaffUsers(users);
+    }, (error) => {
+      console.error('EditRoomModal - Error fetching staff:', error);
+    });
+    return unsub;
+  }, []);
+
+  const getActiveDeans = () => {
+    const deans = staffUsers.filter(
+      (u) => u.roleValue === 'dean' && u.status === 'Active'
+    );
+    return deans;
+  };
+
+  const handleManagerChange = (e) => {
+    const selectedUid = e.target.value;
+    if (!selectedUid) {
+      setForm((f) => ({ ...f, managedBy: '', managedByName: '' }));
+      return;
+    }
+    const dean = getActiveDeans().find((d) => d.uid === selectedUid);
+    setForm((f) => ({
+      ...f,
+      managedBy: selectedUid,
+      managedByName: dean ? dean.name : '', // Use dean.name instead of firstName + lastName
+    }));
+  };
 
   const toggleEquip = (item) => {
     setForm((f) => ({
@@ -25,6 +77,21 @@ export default function EditRoomModal({ room, buildingId, floorId, onClose }) {
         ? f.equipment.filter((x) => x !== item)
         : [...f.equipment, item],
     }));
+  };
+
+  const addCustomEquipment = () => {
+    const item = newEquipment.trim();
+    if (!item) return;
+    if (!equipmentChoices.some((x) => x.toLowerCase() === item.toLowerCase())) {
+      setEquipmentChoices((prev) => [...prev, item]);
+    }
+    setForm((f) => ({
+      ...f,
+      equipment: f.equipment.some((x) => x.toLowerCase() === item.toLowerCase())
+        ? f.equipment
+        : [...f.equipment, item],
+    }));
+    setNewEquipment('');
   };
 
   const handleSubmit = async (e) => {
@@ -42,6 +109,8 @@ export default function EditRoomModal({ room, buildingId, floorId, onClose }) {
         status: form.status,
         capacity: form.capacity,
         equipment: form.equipment,
+        managedBy: form.managedBy,
+        managedByName: form.managedByName,
       });
       onClose(true);
     } catch (err) {
@@ -116,8 +185,8 @@ export default function EditRoomModal({ room, buildingId, floorId, onClose }) {
           </div>
           <div>
             <label className="form-label">Equipment / facilities</label>
-            <div className="flex flex-wrap gap-2 mt-1">
-              {equipmentOptions.map((item) => (
+            <div className="flex flex-wrap gap-2 mt-1 mb-3">
+              {equipmentChoices.map((item) => (
                 <button
                   key={item}
                   type="button"
@@ -133,7 +202,63 @@ export default function EditRoomModal({ room, buildingId, floorId, onClose }) {
                 </button>
               ))}
             </div>
+            <div className="flex gap-2">
+              <input
+                className="form-input"
+                placeholder="Add custom equipment"
+                value={newEquipment}
+                onChange={(e) => setNewEquipment(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addCustomEquipment())}
+              />
+              <button type="button" className="btn-outline-maroon whitespace-nowrap" onClick={addCustomEquipment}>
+                Add
+              </button>
+            </div>
           </div>
+          {isRegistrar && (
+            <div>
+              <label className="form-label">Room Manager (Dean)</label>
+              {floorManagedBy ? (
+                <>
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-2">
+                    <p className="text-xs font-bold text-blue-900 mb-1">
+                      ⚠️ Floor-level manager assigned
+                    </p>
+                    <p className="text-xs text-blue-700">
+                      This room inherits the floor manager. To assign a different manager to this specific room, 
+                      first remove the floor manager or use "Apply to specific rooms" when editing the floor.
+                    </p>
+                  </div>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value="Inherits floor manager"
+                    disabled
+                    style={{ background: '#f9f9f9', color: '#6b7280', cursor: 'not-allowed' }}
+                  />
+                </>
+              ) : (
+                <>
+                  <select
+                    className="form-input"
+                    value={form.managedBy}
+                    onChange={handleManagerChange}
+                    style={{ color: '#2B3235' }}
+                  >
+                    <option value="" style={{ color: '#2B3235' }}>No manager (registrar managed)</option>
+                    {getActiveDeans().map((dean) => (
+                      <option key={dean.uid} value={dean.uid} style={{ color: '#2B3235' }}>
+                        {dean.name}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Assign a specific dean to manage this room
+                  </p>
+                </>
+              )}
+            </div>
+          )}
           <div className="flex gap-3 pt-2">
             <button type="button" onClick={onClose} className="btn-outline-maroon flex-1" disabled={loading}>
               Cancel

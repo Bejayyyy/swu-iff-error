@@ -1,20 +1,41 @@
-import React, { useState } from 'react';
-import { X } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, User } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import { subscribeStaffUsers, getActiveDeans } from '../../services/systemUserService';
 
 const roomTypes = ['Classroom', 'Laboratory', 'Lecture Room', 'Seminar Room', 'Conference Room', 'Gymnasium'];
 const equipmentOptions = ['Projector', 'Whiteboard', 'Air Conditioning', 'Audio System', 'Computers', 'Smart Board', 'CCTV'];
 const statuses = ['Available', 'Occupied', 'Maintenance'];
 
-export default function AddRoomModal({ buildingId, floorId, floor, onClose }) {
-  const { addRoom } = useApp();
-  const [form, setForm] = useState({ name: '', type: '', capacity: '', status: 'Available', equipment: [] });
+export default function AddRoomModal({ buildingId, floorId, floor, floorManagedBy, onClose }) {
+  const { addRoom, currentUser } = useApp();
+  const [form, setForm] = useState({ name: '', type: '', capacity: '', status: 'Available', equipment: [], managedBy: '' });
   const [types, setTypes] = useState(roomTypes);
   const [equipmentChoices, setEquipmentChoices] = useState(equipmentOptions);
   const [newType, setNewType] = useState('');
   const [newEquipment, setNewEquipment] = useState('');
+  const [staffUsers, setStaffUsers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  const isRegistrar = currentUser?.role === 'registrar';
+
+  // Subscribe to staff users to get dean list
+  useEffect(() => {
+    return subscribeStaffUsers(
+      (users) => setStaffUsers(users),
+      (err) => console.error('Error loading staff:', err)
+    );
+  }, []);
+
+  // Auto-set room manager based on floor manager
+  useEffect(() => {
+    if (floorManagedBy && !form.managedBy) {
+      setForm((f) => ({ ...f, managedBy: floorManagedBy }));
+    }
+  }, [floorManagedBy, form.managedBy]);
+
+  const deans = getActiveDeans(staffUsers);
 
   const toggleEquip = (e) =>
     setForm((f) => ({
@@ -58,7 +79,13 @@ export default function AddRoomModal({ buildingId, floorId, floor, onClose }) {
     setLoading(true);
     setError('');
     try {
-      await addRoom(buildingId, floorId, floor, { ...form, capacity: Number(form.capacity) });
+      const roomData = {
+        ...form,
+        capacity: Number(form.capacity),
+        managedBy: form.managedBy || null, // null means inherit from floor or registrar
+        managedByName: form.managedBy ? deans.find(d => d.uid === form.managedBy)?.name : null,
+      };
+      await addRoom(buildingId, floorId, floor, roomData);
       onClose();
     } catch (err) {
       setError(err.message || 'Failed to add room.');
@@ -147,7 +174,7 @@ export default function AddRoomModal({ buildingId, floorId, floor, onClose }) {
           </div>
           <div>
             <label className="form-label">Equipment / Facilities</label>
-            <div className="flex flex-wrap gap-2 mt-1">
+            <div className="flex flex-wrap gap-2 mt-1 mb-3">
               {equipmentChoices.map((e) => (
                 <button
                   key={e}
@@ -164,7 +191,50 @@ export default function AddRoomModal({ buildingId, floorId, floor, onClose }) {
                 </button>
               ))}
             </div>
+            <div className="flex gap-2">
+              <input
+                className="form-input"
+                placeholder="Add custom equipment"
+                value={newEquipment}
+                onChange={(e) => setNewEquipment(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addCustomEquipment())}
+              />
+              <button type="button" className="btn-outline-maroon whitespace-nowrap" onClick={addCustomEquipment}>
+                Add
+              </button>
+            </div>
           </div>
+          {isRegistrar && (
+            <div>
+              <label className="form-label flex items-center gap-2">
+                <User size={14} />
+                Room Manager (Optional)
+              </label>
+              <select
+                className="form-input"
+                value={form.managedBy}
+                onChange={(e) => setForm((f) => ({ ...f, managedBy: e.target.value }))}
+              >
+                <option value="">
+                  {floorManagedBy 
+                    ? `Inherit from Floor (${deans.find(d => d.uid === floorManagedBy)?.name || 'Assigned Dean'})` 
+                    : 'Managed by Registrar (Default)'}
+                </option>
+                <optgroup label="Delegate to Specific Dean">
+                  {deans.map((dean) => (
+                    <option key={dean.uid} value={dean.uid}>
+                      {dean.name} {dean.department ? `(${dean.department})` : ''}
+                    </option>
+                  ))}
+                </optgroup>
+              </select>
+              <p className="text-[10px] text-gray-500 mt-1">
+                {floorManagedBy 
+                  ? 'Override floor manager or leave empty to inherit floor setting.' 
+                  : 'If a dean is assigned, reservations for this room will be approved by that dean.'}
+              </p>
+            </div>
+          )}
           <div className="flex gap-3 mt-7">
             <button type="button" onClick={onClose} className="btn-outline-maroon flex-1" disabled={loading}>
               Cancel
