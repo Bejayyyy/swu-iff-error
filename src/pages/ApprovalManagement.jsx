@@ -57,6 +57,14 @@ export default function ApprovalManagement() {
   // My own requests (for tracking)
   const myRequests = filterMyRequests(requests);
 
+  // Update tab visibility based on actual requests
+  // Show academic tab if user has permission OR has academic requests
+  const hasAcademicRequests = myRequests.some(r => r.type === 'academic');
+  const hasNonAcademicRequests = myRequests.some(r => r.type === 'non-academic');
+  
+  const showAcademicTabFinal = showAcademicTab || hasAcademicRequests;
+  const showNonAcademicTabFinal = showNonAcademicTab || hasNonAcademicRequests;
+
   // Helper function to get role-specific status
   const getRoleSpecificStatus = (reservation) => {
     if (!reservation.approvalRecords || !role) return reservation.status;
@@ -115,6 +123,20 @@ export default function ApprovalManagement() {
     const normalizedStatus = r.status === RESERVATION_STATUS.IN_PROGRESS ? 'Pending' : r.status;
     const statusMatch = filter === 'All' || r.status === filter || (filter === 'Pending' && normalizedStatus === 'Pending');
     
+    // Debug logging
+    if (showSection === 'my-requests') {
+      console.log('[ApprovalManagement] myFiltered check:', {
+        id: r.id,
+        title: r.title,
+        type: r.type,
+        status: r.status,
+        currentTab: tab,
+        typeMatch,
+        statusMatch,
+        filter
+      });
+    }
+    
     // Date range filter
     let dateMatch = true;
     if (dateFrom || dateTo) {
@@ -156,6 +178,19 @@ export default function ApprovalManagement() {
   const subtitle = isRegistrar
     ? 'Review and approve schedules and room utilization requests'
     : `${roleLabel} — view and manage requests within your role`;
+
+  // Debug log the state
+  console.log('[ApprovalManagement] State:', {
+    showSection,
+    tab,
+    filter,
+    myRequestsCount: myRequests.length,
+    myFilteredCount: myFiltered.length,
+    showAcademicTab,
+    showNonAcademicTab,
+    role,
+    roleLabel
+  });
 
   // Stats for approvals section - use role-specific status
   const counts = {
@@ -278,14 +313,14 @@ export default function ApprovalManagement() {
         </h2>
 
         <div className="flex flex-col gap-3 mb-5 w-fit max-w-full">
-          {(showAcademicTab || showNonAcademicTab) && (
+          {(showAcademicTabFinal || showNonAcademicTabFinal) && (
             <CategoryFilterTabs
               value={tab}
               onChange={(v) => { setTab(v); setFilter('All'); }}
-              academicCount={showAcademicTab ? academicReqs.length : 0}
-              nonAcademicCount={showNonAcademicTab ? nonAcademicReqs.length : 0}
-              hideAcademic={!showAcademicTab}
-              hideNonAcademic={!showNonAcademicTab}
+              academicCount={showAcademicTabFinal ? academicReqs.length : 0}
+              nonAcademicCount={showNonAcademicTabFinal ? nonAcademicReqs.length : 0}
+              hideAcademic={!showAcademicTabFinal}
+              hideNonAcademic={!showNonAcademicTabFinal}
             />
           )}
           <StatusFilterRow value={filter} onChange={setFilter} />
