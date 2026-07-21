@@ -111,11 +111,33 @@ export function filterReservationsForRole(reservations, role, profile) {
  * Filter reservations created by this user (for tracking their own requests)
  */
 export function filterMyReservations(reservations, profile) {
-  if (!profile) return [];
+  if (!profile) {
+    console.log('[filterMyReservations] No profile provided');
+    return [];
+  }
   
-  return reservations.filter((reservation) => {
-    return reservation.createdByUid === profile.uid;
+  console.log('[filterMyReservations] Filtering for user:', {
+    uid: profile.uid,
+    email: profile.email,
+    role: profile.role,
+    totalReservations: reservations.length
   });
+  
+  const filtered = reservations.filter((reservation) => {
+    const match = reservation.createdByUid === profile.uid;
+    if (!match) {
+      console.log('[filterMyReservations] No match:', {
+        reservationId: reservation.id,
+        reservationCreatedBy: reservation.createdByUid,
+        profileUid: profile.uid,
+        title: reservation.title
+      });
+    }
+    return match;
+  });
+  
+  console.log('[filterMyReservations] Filtered result:', filtered.length, 'reservations');
+  return filtered;
 }
 
 export function buildApprovalFlowLabel(approvalRecords = []) {

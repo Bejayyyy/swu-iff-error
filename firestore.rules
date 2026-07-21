@@ -164,20 +164,19 @@ service cloud.firestore {
         && isPhinmaedEmail() 
         && (resource.data.role == 'registrar' || isStaffRoleOrDefined(resource.data.role));
 
-      // Course schedules subcollection - deans can manage their own, registrars can read all
+      // Course schedules subcollection - deans can manage their own, all staff can read
       match /course_schedules/{section} {
+        // Allow all staff to read course schedules (they're public schedule info)
         allow read: if isMainRole() && isPhinmaedEmail();
+        // Only registrar and the dean themselves can write
         allow create, update, delete: if isPhinmaedEmail() && (
           isRegistrar() || (hasRole('dean') && callerIsSelf(userId))
         );
 
         match /entries/{entryId} {
-          // Allow teachers to read entries where they are the instructor
-          allow read: if isMainRole() && isPhinmaedEmail() && (
-            isRegistrar() 
-            || (hasRole('dean') && callerIsSelf(userId))
-            || (hasRole('teacher') && userDocExists() && resource.data.instructor == userDoc().data.displayName)
-          );
+          // Allow all staff to read entries (public schedule information)
+          allow read: if isMainRole() && isPhinmaedEmail();
+          // Only registrar and the dean themselves can write
           allow create, update, delete: if isPhinmaedEmail() && (
             isRegistrar() || (hasRole('dean') && callerIsSelf(userId))
           );
@@ -464,11 +463,8 @@ service cloud.firestore {
 
     // CollectionGroup rules for schedule entries - allows teachers to query their own schedules across all deans
     match /{path=**}/entries/{entryId} {
-      allow read: if isMainRole() && isPhinmaedEmail() && userDocExists() && (
-        isRegistrar()
-        || hasRole('dean')
-        || (hasRole('teacher') && resource.data.instructor == userDoc().data.displayName)
-      );
+      // Allow all staff to read entries (matching the specific course_schedules/entries rule)
+      allow read: if isMainRole() && isPhinmaedEmail();
     }
   }
 }

@@ -521,7 +521,7 @@ export async function getDeanSections(deanUid) {
 
 /**
  * Subscribe to sections for a specific dean
- * Returns section objects with metadata (name, yearLevel)
+ * Returns section objects with metadata (name, yearLevel, scheduleCount)
  */
 export function subscribeDeanSections(deanUid, onData, onError) {
   if (!deanUid) {
@@ -533,12 +533,25 @@ export function subscribeDeanSections(deanUid, onData, onError) {
   
   return onSnapshot(
     schedulesRef,
-    (snapshot) => {
-      const sections = snapshot.docs.map(doc => ({
-        id: doc.id,
-        name: doc.id, // Section name is the document ID
-        ...doc.data(), // Includes yearLevel, createdAt, etc.
-      }));
+    async (snapshot) => {
+      const sectionPromises = snapshot.docs.map(async (doc) => {
+        const sectionName = doc.id;
+        
+        // Count entries in this section
+        const entriesRef = deanSectionEntriesRef(deanUid, sectionName);
+        const entriesSnapshot = await getDocs(entriesRef);
+        const scheduleCount = entriesSnapshot.size;
+        
+        return {
+          id: doc.id,
+          name: sectionName, // Section name is the document ID
+          scheduleCount, // Add schedule count
+          ...doc.data(), // Includes yearLevel, createdAt, etc.
+        };
+      });
+      
+      const sections = await Promise.all(sectionPromises);
+      
       // Sort by year level first, then by name
       sections.sort((a, b) => {
         const yearA = a.yearLevel || '';
@@ -548,6 +561,7 @@ export function subscribeDeanSections(deanUid, onData, onError) {
         }
         return a.name.localeCompare(b.name);
       });
+      
       onData(sections);
     },
     onError
@@ -896,18 +910,23 @@ export function subscribeAllPlotEntriesForRoom(roomCode, semester, scheduleMode,
           const sectionName = sectionDoc.id;
           const entriesRef = collection(userRef, 'course_schedules', sectionName, 'entries');
           
-          // Subscribe to entries in this section that match the room and mode
+          // Build query to match room, semester, and mode
           let q = query(
             entriesRef,
             where('roomCode', '==', roomCode)
           );
+          
+          // Add semester filter if provided
+          if (semester !== undefined && semester !== null) {
+            q = query(q, where('semester', '==', Number(semester)));
+          }
           
           // Add scheduleMode filter only for specific modes
           if (scheduleMode) {
             q = query(q, where('scheduleMode', '==', scheduleMode));
           }
           
-          console.log(`[subscribeAllPlotEntriesForRoom] Subscribing to ${deanName}/${sectionName}/entries with roomCode=${roomCode}`);
+          console.log(`[subscribeAllPlotEntriesForRoom] Subscribing to ${deanName}/${sectionName}/entries with roomCode=${roomCode}, semester=${semester}, mode=${scheduleMode}`);
           
           const unsubscribe = onSnapshot(
             q,

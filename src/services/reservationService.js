@@ -56,47 +56,182 @@ export function subscribeRoomReservations(onData, onError, userProfile = null) {
     );
   }
 
-  // Dean can see reservations from their college OR where they're custom manager OR their own
+  // Dean can see reservations from their college OR their own created requests
   if (userProfile.role === 'dean') {
     const college = userProfile.college || userProfile.department;
+    
+    // If dean has a college, see both college reservations AND own created reservations
     if (college) {
-      // Query by college field (will also include custom-managed reservations via rules)
-      const q = query(
+      // First subscription: College reservations
+      const collegeQuery = query(
         reservationsCollection(),
         where('college', '==', college),
         orderBy('createdAt', 'desc')
       );
-      return onSnapshot(
-        q,
-        (snap) => onData(snap.docs.map(mapReservationDoc)),
-        onError,
+      
+      // Second subscription: Own reservations
+      const myQuery = query(
+        reservationsCollection(),
+        where('createdByUid', '==', userProfile.uid),
+        orderBy('createdAt', 'desc')
       );
+      
+      // Merge results from both queries
+      const collegeResults = [];
+      const myResults = [];
+      const mergedIds = new Set();
+      
+      const unsubCollege = onSnapshot(
+        collegeQuery,
+        (snap) => {
+          collegeResults.length = 0;
+          snap.docs.forEach(doc => {
+            collegeResults.push(mapReservationDoc(doc));
+            mergedIds.add(doc.id);
+          });
+          
+          // Merge and deduplicate
+          const merged = [...collegeResults];
+          myResults.forEach(r => {
+            if (!mergedIds.has(r.id)) {
+              merged.push(r);
+            }
+          });
+          
+          // Sort by createdAt
+          merged.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+          onData(merged);
+        },
+        onError
+      );
+      
+      const unsubMy = onSnapshot(
+        myQuery,
+        (snap) => {
+          myResults.length = 0;
+          mergedIds.clear();
+          collegeResults.forEach(r => mergedIds.add(r.id));
+          
+          snap.docs.forEach(doc => {
+            myResults.push(mapReservationDoc(doc));
+          });
+          
+          // Merge and deduplicate
+          const merged = [...collegeResults];
+          myResults.forEach(r => {
+            if (!mergedIds.has(r.id)) {
+              merged.push(r);
+            }
+          });
+          
+          // Sort by createdAt
+          merged.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+          onData(merged);
+        },
+        onError
+      );
+      
+      return () => {
+        unsubCollege();
+        unsubMy();
+      };
     }
   }
 
-  // GSD, Student Life, and Organization Head see all non-draft reservations
+  // GSD, Student Life, and Organization Head see all non-draft reservations AND their own
   // They're part of approval workflows and need to see pending requests
   // Firestore rules will filter to ensure they can only read what they're allowed
   if (userProfile.role === 'gsd' || 
       userProfile.role === 'student_life' || 
       userProfile.role === 'organization_head') {
-    const q = query(
+    
+    // Subscription 1: All non-draft reservations (for approvals)
+    const allQuery = query(
       reservationsCollection(),
       where('status', 'in', [
+        RESERVATION_STATUS.PENDING,
         RESERVATION_STATUS.IN_PROGRESS,
         RESERVATION_STATUS.APPROVED,
         RESERVATION_STATUS.REJECTED
       ]),
       orderBy('createdAt', 'desc')
     );
-    return onSnapshot(
-      q,
-      (snap) => onData(snap.docs.map(mapReservationDoc)),
-      onError,
+    
+    // Subscription 2: Own created reservations (including drafts)
+    const myQuery = query(
+      reservationsCollection(),
+      where('createdByUid', '==', userProfile.uid),
+      orderBy('createdAt', 'desc')
     );
+    
+    // Merge results from both queries
+    const allResults = [];
+    const myResults = [];
+    const mergedIds = new Set();
+    
+    const unsubAll = onSnapshot(
+      allQuery,
+      (snap) => {
+        allResults.length = 0;
+        snap.docs.forEach(doc => {
+          allResults.push(mapReservationDoc(doc));
+          mergedIds.add(doc.id);
+        });
+        
+        // Merge and deduplicate
+        const merged = [...allResults];
+        myResults.forEach(r => {
+          if (!mergedIds.has(r.id)) {
+            merged.push(r);
+          }
+        });
+        
+        // Sort by createdAt
+        merged.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+        onData(merged);
+      },
+      onError
+    );
+    
+    const unsubMy = onSnapshot(
+      myQuery,
+      (snap) => {
+        myResults.length = 0;
+        mergedIds.clear();
+        allResults.forEach(r => mergedIds.add(r.id));
+        
+        snap.docs.forEach(doc => {
+          myResults.push(mapReservationDoc(doc));
+        });
+        
+        // Merge and deduplicate
+        const merged = [...allResults];
+        myResults.forEach(r => {
+          if (!mergedIds.has(r.id)) {
+            merged.push(r);
+          }
+        });
+        
+        // Sort by createdAt
+        merged.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+        onData(merged);
+      },
+      onError
+    );
+    
+    return () => {
+      unsubAll();
+      unsubMy();
+    };
   }
 
   // For other roles (teacher, etc.), see their own reservations
+  console.log('[subscribeRoomReservations] Other role subscription:', {
+    role: userProfile.role,
+    uid: userProfile.uid,
+    email: userProfile.email
+  });
+  
   const q = query(
     reservationsCollection(),
     where('createdByUid', '==', userProfile.uid),
@@ -105,7 +240,11 @@ export function subscribeRoomReservations(onData, onError, userProfile = null) {
   
   return onSnapshot(
     q,
-    (snap) => onData(snap.docs.map(mapReservationDoc)),
+    (snap) => {
+      const results = snap.docs.map(mapReservationDoc);
+      console.log('[subscribeRoomReservations] Teacher/other role got reservations:', results.length);
+      onData(results);
+    },
     onError,
   );
 }

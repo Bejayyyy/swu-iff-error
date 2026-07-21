@@ -206,19 +206,10 @@ export function getAccessStatusMessage(accessControl, collegeCode) {
 }
 
 /**
- * Reset access control (for testing or new semester setup)
+ * Reset access control (delete the document to start fresh)
  */
 export async function resetScheduleAccess(schoolYearId, semester) {
   const ref = accessControlRef(schoolYearId, semester);
-  await setDoc(ref, {
-    schoolYearId,
-    semester: Number(semester),
-    firstCollege: null,
-    approvedColleges: [],
-    status: 'none',
-    allAccessGrantedAt: null,
-    allAccessGrantedBy: null,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-  });
+  const { deleteDoc } = await import('firebase/firestore');
+  await deleteDoc(ref);
 }

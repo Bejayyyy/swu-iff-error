@@ -12,6 +12,7 @@ import AddPlotEntryModalEnhanced from '../components/modals/AddPlotEntryModalEnh
 import LoadingModal from '../components/modals/LoadingModal';
 import NotificationModal from '../components/modals/NotificationModal';
 import GrantScheduleAccessModal from '../components/modals/GrantScheduleAccessModal';
+import ResetDeanSchedulesModal from '../components/modals/ResetDeanSchedulesModal';
 import { addDays } from '../constants/scheduleGrid';
 import {
   formatDisplayDate,
@@ -41,6 +42,7 @@ import {
   grantAllRemainingAccess,
   hasSchedulingAccess,
   getAccessStatusMessage,
+  resetScheduleAccess,
 } from '../services/scheduleAccessService';
 import { SCHEDULE_DAYS } from '../constants/scheduleGrid';
 
@@ -689,23 +691,67 @@ export default function CourseSchedulingNew() {
               </p>
             </div>
             
-            {!scheduleAccess && (
+            <div className="flex items-center gap-2">
+              {/* Reset Schedules Button */}
               <button
                 type="button"
-                onClick={() => {
-                  if (!activeSchoolYearId || !semester) {
-                    alert('Please select a school year and semester first.');
-                    return;
-                  }
-                  setShowGrantAccessModal(true);
-                }}
+                onClick={() => setShowResetSchedulesModal(true)}
                 disabled={!activeSchoolYearId || !semester}
-                className="px-4 py-2 rounded-lg text-sm font-bold bg-[#800000] text-white hover:bg-[#600000] transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-4 py-2 rounded-lg text-sm font-bold bg-red-600 text-white hover:bg-red-700 transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Delete plotted schedules by selected deans"
               >
-                <Send size={16} />
-                Grant First College Access
+                <Trash2 size={16} />
+                Reset Schedules
               </button>
-            )}
+
+              {/* Grant First College or Reset Access Control */}
+              {!scheduleAccess ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!activeSchoolYearId || !semester) {
+                      alert('Please select a school year and semester first.');
+                      return;
+                    }
+                    setShowGrantAccessModal(true);
+                  }}
+                  disabled={!activeSchoolYearId || !semester}
+                  className="px-4 py-2 rounded-lg text-sm font-bold bg-[#800000] text-white hover:bg-[#600000] transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Send size={16} />
+                  Grant First College Access
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!window.confirm('Reset access control? This will remove all granted permissions and you can start fresh. Existing schedules will NOT be deleted.')) {
+                      return;
+                    }
+                    try {
+                      await resetScheduleAccess(activeSchoolYearId, semester);
+                      showNotification({
+                        type: 'success',
+                        title: 'Access Control Reset',
+                        message: 'Schedule access control has been reset. You can now grant access again.',
+                      });
+                    } catch (err) {
+                      showNotification({
+                        type: 'error',
+                        title: 'Reset Failed',
+                        message: err.message || 'Failed to reset access control.',
+                      });
+                    }
+                  }}
+                  disabled={!activeSchoolYearId || !semester}
+                  className="px-4 py-2 rounded-lg text-sm font-bold bg-orange-600 text-white hover:bg-orange-700 transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Reset access control to start fresh"
+                >
+                  <X size={16} />
+                  Reset Access Control
+                </button>
+              )}
+            </div>
           </div>
 
           {scheduleAccess ? (
@@ -1304,6 +1350,38 @@ export default function CourseSchedulingNew() {
               message: 'The first college has been granted scheduling access.',
             });
           }}
+        />
+      )}
+
+      {/* Reset Dean Schedules Modal */}
+      {showResetSchedulesModal && (
+        <ResetDeanSchedulesModal
+          isOpen={showResetSchedulesModal}
+          onClose={() => setShowResetSchedulesModal(false)}
+          onConfirm={async (deanUids, semester, schoolYear) => {
+            setIsLoading(true);
+            setLoadingMessage(`Deleting schedules for ${deanUids.length} dean(s)...`);
+            try {
+              const result = await resetMultipleDeansSchedules(deanUids, semester);
+              setIsLoading(false);
+              showNotification({
+                type: 'success',
+                title: 'Schedules Deleted',
+                message: `Successfully deleted schedules for ${result.totalDeleted} entries across ${deanUids.length} dean(s).`,
+              });
+            } catch (err) {
+              setIsLoading(false);
+              showNotification({
+                type: 'error',
+                title: 'Reset Failed',
+                message: err.message || 'Failed to reset schedules.',
+              });
+              throw err;
+            }
+          }}
+          deanUsers={staffUsers.filter(u => u.roleValue === 'dean')}
+          semester={semester}
+          schoolYear={schoolYearLabel}
         />
       )}
     </Layout>
